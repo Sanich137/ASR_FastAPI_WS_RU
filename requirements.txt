@@ -3,11 +3,11 @@ httpx~=0.28.1
 
 pathlib~=1.0.1
 ujson~=5.10.0
-numpy~=1.26.4
+numpy~=2.2
 
-uvicorn~=0.34.2
-fastapi~=0.115.12
-pydantic~=2.11.4
+uvicorn~=0.38.0
+fastapi~=0.124.0
+pydantic~=2.12.15
 websockets~=15.0.1
 jinja2~=3.1.6
 python-multipart~=0.0.20
@@ -20,8 +20,8 @@ tqdm~=4.67.1
 psutil~=7.0.0
 
 # For ASR
-onnxruntime-gpu[cuda,cudnn]==1.22
-onnx-asr == 0.9.0
+onnxruntime-gpu[cuda,cudnn]== 1.23.2
+onnx-asr == 0.9.1
 hf_xet
 
 librosa~=0.11.0
@@ -35,7 +35,6 @@ python_speech_features
 umap-learn~=0.5.7
 hdbscan~=0.8.40
 cupy-cuda12x  # Учитывайте используемую версию cuda.
-
 
 # for VAD
 requests~=2.32.3

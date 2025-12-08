@@ -1,6 +1,6 @@
 from datetime import datetime as dt
 import ujson
-import asyncio
+import numpy as np
 from collections import defaultdict
 import config
 from Recognizer import recognizer
@@ -109,66 +109,6 @@ async def recognise_w_calculate_confidence(audio_data,
     # Возвращаем результат в формате JSON
     return result
 
-# async def simple_recognise(audio_data, ) -> dict:
-#     """
-#     Собираем токены в слова дополнительных вычислений не производит.
-#
-#     :param audio_data: Аудиоданные в формате Audiosegment (puDub).
-#     :return: json =
-#         {
-#         "data": {
-#           "result": [
-#
-#             {
-#               "conf": 1,
-#               "start": 32.22,
-#               "end": 32.46,
-#               "word": "сейчас"
-#             },
-#             {
-#               "conf": 1,
-#               "start": 33.26,
-#               "end": 33.74,
-#               "word": "попробуем"
-#             },
-#             {
-#               "conf": 1,
-#               "start": 37.46,
-#               "end": 37.82,
-#               "word": "свидания"
-#             }
-#           ],
-#           "text": "угу угу ладно сейчас попробуем все хорошо поняла вас спасибо да до свидания"
-#         }
-#
-#     без дополнительных расчётов
-#     """
-#
-#     # Приводим фреймрейт к фреймрейту модели
-#     if audio_data.frame_rate != config.BASE_SAMPLE_RATE:
-#         audio_data = await resample_audiosegment(audio_data, config.BASE_SAMPLE_RATE)
-#
-#     # Перевод в семплы для распознавания.
-#     samples = await get_np_array_samples_float32(audio_data.raw_data, audio_data.sample_width)
-#
-#     # Распознавание в отдельном потоке
-#     def decode_in_thread():
-#
-#         stream = recognizer.create_stream()
-#         # передали аудиофрагмент на распознавание
-#         stream.accept_waveform(sample_rate=audio_data.frame_rate, waveform=samples)
-#         recognizer.decode_stream(stream)
-#         r = str(stream.result)
-#         del stream
-#         return r
-#
-#     result_json = await asyncio.to_thread(decode_in_thread)
-#
-#     # Парсим результат
-#     result = ujson.loads(result_json)
-#
-#     return result
-
 
 async def simple_recognise(audio_data, ) -> dict:
     # Приводим фреймрейт к фреймрейту модели
@@ -215,63 +155,46 @@ async def recognise_w_speed_correction(audio_data, multiplier=float(1.0), can_sl
     return result, speed, multiplier
 
 
-# Наработки по распознавания батчем. Не хватает памяти. Прироста скорости найти не удаётся
-async def simple_recognise_batch(list_audio_data: list, batch_size: int = 4) -> list:
-    time_start = dt.now()
+async def simple_recognise_batch(list_audio_data: list, batch_size: int = 8) -> list:
+    logger.info(f"Выполняется батчинг с размером {batch_size}")
 
-    # Преобразуем аудио в numpy-массивы
-    list_of_samples = [
-        await get_np_array_samples_float32(audio_data.raw_data, audio_data.sample_width)
-        for audio_data in list_audio_data
-    ]
+    list_of_samples = []
+    max_samples = int(config.MAX_OVERLAP_DURATION * config.BASE_SAMPLE_RATE)
 
-    # Формируем батчи
-    list_of_batches = [list_of_samples[i:i + batch_size] for i in range(0, len(list_of_samples), batch_size)]
+    # Перевод в семплы и выравнивание по длине
+    for audio_data in list_audio_data:
+        samples = await get_np_array_samples_float32(audio_data.raw_data, audio_data.sample_width)
 
-    async def process_batch(a_batch):
-        loop = asyncio.get_running_loop()
-        streams = []
+        # Выравнивание до максимальной длины
+        if len(samples) < max_samples:
+            # Дополнение тишиной (нулями) до нужной длины
+            padded_samples = np.zeros(max_samples, dtype=np.float32)
+            padded_samples[:len(samples)] = samples
+            list_of_samples.append(padded_samples)
+        elif len(samples) > max_samples:
+            # Обрезка до максимальной длины
+            logger.warning(f"Аудио длиной {len(samples) / config.BASE_SAMPLE_RATE:.2f} сек. "
+                           f"превышает MAX_OVERLAP_DURATION ({config.MAX_OVERLAP_DURATION} сек.). "
+                           f"Будет обрезано до {max_samples} семплов.")
+            list_of_samples.append(samples[:max_samples])
+        else:
+            # Идеальный размер
+            list_of_samples.append(samples)
 
-        def sync_process_batch():
-            try:
-                # Создаём потоки для батча
-                for samples_data in a_batch:
-                    stream = recognizer.create_stream()
-                    stream.accept_waveform(sample_rate=16000, waveform=samples_data)
-                    streams.append(stream)
+    list_of_dict_result = []
+    for i in range(0, len(list_of_samples), batch_size):
+        batch = list_of_samples[i:min(i + batch_size, len(list_of_samples))]
 
-                # Декодируем батч
-                recognizer.decode_streams(streams)
+        # Преобразуем список массивов в один тензор (для некоторых ASR моделей)
+        # Если ваша recognizer.recognize ожидает список, можно пропустить этот шаг
+        # batch_array = np.stack(batch)  # Создаем единый тензор
 
-                # Собираем результаты
-                return [ujson.loads(str(stream.result)) for stream in streams]
-            finally:
-                # Освобождаем потоки
-                for stream in streams:
-                    del stream
+        result = recognizer.recognize(batch, sample_rate=config.BASE_SAMPLE_RATE)
 
-        # Выполняем в пуле потоков
-        return await loop.run_in_executor(None, sync_process_batch)
+        for part_res in result:
+            list_of_dict_result.append(asdict(part_res))
 
-    # Обрабатываем батчи последовательно
-    results = []
-    logger.info(f"Создано {len(list_of_batches)} батчей для распознавания.")
-
-    for i, batch in enumerate(list_of_batches):
-        try:
-            batch_result = await process_batch(batch)
-            results.append(batch_result)
-            logger.info(f"Обработан батч {i + 1}/{len(list_of_batches)}")
-        except Exception as e:
-            logger.error(f"Ошибка обработки батча {i + 1}: {e}")
-            results.append([])  # Пустой результат для батча при ошибке
-
-    # Объединяем результаты
-    flat_results = [item for sublist in results for item in sublist if not isinstance(item, Exception)]
-
-    logger.info(f"Время выполнения: {(dt.now() - time_start).total_seconds()} сек.")
-
-    return flat_results
+    return list_of_dict_result
 
 
 

@@ -1,5 +1,7 @@
 from io import BytesIO
 import asyncio
+
+import config
 from utils.pre_start_init import app
 from utils.do_logging import logger
 from models.fast_api_models import PostFileRequest
@@ -19,7 +21,9 @@ def get_file_request(
     do_punctuation: bool = Form(default=False, description="Восстанавливать пунктуацию."),
     do_diarization: bool = Form(default=False, description="Разделять по спикерам."),
     diar_vad_sensity: int = Form(default=3, description="Чувствительность VAD."),
-    do_auto_speech_speed_correction: bool = Form(default=False, description="Корректировать скорость речи при распознавании."),
+    use_batch: bool = Form(default=config.USE_BATCH, description="Использовать батчинг для ASR."),
+    batch_size: int = Form(default=config.ASR_DEFAULT_BATCH_SIZE, description="Размер батча для ASR."),
+    do_auto_speech_speed_correction: bool = Form(default=True, description="Корректировать скорость речи при распознавании."),
     speech_speed_correction_multiplier: float = Form(default=1, description="Базовый коэффициент скорости речи."),
     make_mono: bool = Form(default=False, description="Соединить несколько каналов в mono"),
 ) -> PostFileRequest:
@@ -29,7 +33,9 @@ def get_file_request(
         do_dialogue=do_dialogue,
         do_punctuation=do_punctuation,
         do_diarization=do_diarization,
+        use_batch=use_batch,
         diar_vad_sensity=diar_vad_sensity,
+        batch_size=batch_size,
         make_mono=make_mono,
         do_auto_speech_speed_correction = do_auto_speech_speed_correction,
         speech_speed_correction_multiplier = speech_speed_correction_multiplier

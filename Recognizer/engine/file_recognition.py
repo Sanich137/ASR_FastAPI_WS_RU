@@ -116,53 +116,58 @@ def process_file(tmp_path, params):
                 audio_buffer[post_id] = overlap
                 asyncio.run(find_last_speech_position(post_id, is_last_chunk)) # Последний чанк обрабатывается иначе.
 
+        if params.use_batch:
+            logger.info("Запрошен батчинг")
+            list_asr_result_wo_conf = asyncio.run(simple_recognise_batch(audio_to_asr[post_id],params.batch_size),
+                                                  )  # --> list
 
-        use_batching = False
-        if use_batching:
-            list_asr_result_wo_conf = asyncio.run(simple_recognise_batch(audio_to_asr[post_id]))  # --> list
-            continue
-        else:
-            pass
+            for _, asr_result_wo_conf in enumerate(list_asr_result_wo_conf):
 
-        for audio_asr in audio_to_asr[post_id]:
-            try:
-
-                # Снижаем скорость аудио по необходимости
-                if params.do_auto_speech_speed_correction or params.speech_speed_correction_multiplier != 1:
-                    logger.debug("Будут использованы механизмы анализа скорости речи и замедления аудио")
-
-                    asr_result_wo_conf, speed, multiplier = asyncio.run(recognise_w_speed_correction(audio_asr,
-                                                                        can_slow_down=True,
-                                                                        multiplier=params.speech_speed_correction_multiplier))
-                    params.speech_speed_correction_multiplier = multiplier
-                else:
-                    # Производим распознавание
-                    asr_result_wo_conf = asyncio.run(simple_recognise(audio_asr))
-
-            except Exception as e:
-                logger.error(f"Error ASR audio - {e}")
-                error_description = f"Error ASR audio - {e}"
-            else:
                 asr_result = asyncio.run(process_asr_json(asr_result_wo_conf, audio_duration[post_id]))
 
                 result["raw_data"][f"channel_{n_channel + 1}"].append(asr_result)
-
                 with audio_lock:
-                    audio_duration[post_id] += audio_asr.duration_seconds
+                    audio_duration[post_id] += audio_to_asr[post_id][_].duration_seconds
                 res = True
                 logger.debug(asr_result)
+        else:
+            for audio_asr in audio_to_asr[post_id]:
+                try:
+                    # Снижаем скорость аудио по необходимости
+                    if params.do_auto_speech_speed_correction or params.speech_speed_correction_multiplier != 1:
+                        logger.debug("Будут использованы механизмы анализа скорости речи и замедления аудио")
+                        asr_result_wo_conf, speed, multiplier = asyncio.run(recognise_w_speed_correction(audio_asr,
+                                                                            can_slow_down=True,
+                                                                            multiplier=params.speech_speed_correction_multiplier))
+                        params.speech_speed_correction_multiplier = multiplier
+                    else:
+                        # Производим распознавание
+                        asr_result_wo_conf = asyncio.run(simple_recognise(audio_asr))
 
-        with audio_lock:
-            try:
-                del audio_overlap[post_id]
-                del audio_buffer[post_id]
-                del audio_to_asr[post_id]
-                del audio_duration[post_id]
-            except Exception as e:
-                error_description = f"Ошибка при очистке данных - {e}"
-                logger.error(error_description)
-                result["success"] = False
-                result['error_description'] = str(error_description)
+                except Exception as e:
+                    logger.error(f"Error ASR audio - {e}")
+                    error_description = f"Error ASR audio - {e}"
+                else:
+                    asr_result = asyncio.run(process_asr_json(asr_result_wo_conf, audio_duration[post_id]))
+
+                    result["raw_data"][f"channel_{n_channel + 1}"].append(asr_result)
+
+                    with audio_lock:
+                        audio_duration[post_id] += audio_asr.duration_seconds
+                    res = True
+                    logger.debug(asr_result)
+
+            with audio_lock:
+                try:
+                    del audio_overlap[post_id]
+                    del audio_buffer[post_id]
+                    del audio_to_asr[post_id]
+                    del audio_duration[post_id]
+                except Exception as e:
+                    error_description = f"Ошибка при очистке данных - {e}"
+                    logger.error(error_description)
+                    result["success"] = False
+                    result['error_description'] = str(error_description)
     del mono_data
     del overlaps
 
