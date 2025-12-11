@@ -39,7 +39,8 @@ match config.PROVIDER:
         encoding_providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
         cpu_preprocessing = False
         logger.info("Using TENSORRT provider")
-    case True :
+    case _ :
+        preprocessor_providers = ["CPUExecutionProvider"]
         encoding_providers = ["CPUExecutionProvider"]
         logger.info("Using CPU provider")
         cpu_preprocessing = True
@@ -57,6 +58,10 @@ recognizer = onnx_asr.load_model(model=config.MODEL_NAME,
                                  preprocessor_config=preprocessor_settings,
                                  ).with_timestamps()
 
-audio = np.random.randn(int(config.MAX_OVERLAP_DURATION * config.BASE_SAMPLE_RATE)).astype(np.float32)
-recognizer.recognize([audio])
-logger.info(f"Успешно загружена ASR модель {config.MODEL_NAME}.")
+try:
+    audio = np.random.randn(int(config.MAX_OVERLAP_DURATION * config.BASE_SAMPLE_RATE)).astype(np.float32)
+    recognizer.recognize([audio])
+except Exception as e:
+    logger.error("Ошибка при прогреве модели. Сервис работать не будет. Возможно, модель не поддерживает выбранный провайдер.")
+else:
+    logger.info(f"Успешно загружена ASR модель {config.MODEL_NAME}.")
