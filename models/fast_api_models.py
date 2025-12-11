@@ -24,6 +24,10 @@ class SyncASRRequest(BaseModel):
     diar_vad_sensity: int = 3
     do_auto_speech_speed_correction: Union[bool, None] = config.DO_SPEED_SPEECH_CORRECTION
     speech_speed_correction_multiplier: Union[float, None] = config.SPEED_SPEECH_CORRECTION_MULTIPLIER
+    use_batch: Union[bool, None] = config.USE_BATCH
+    batch_size: Union[int, None] = config.ASR_BATCH_SIZE
+
+
 
 
 class PostFileRequest(BaseModel):
