@@ -1,13 +1,7 @@
 import datetime
-from datetime import datetime as dt
-from turtledemo.penrose import start
-
 import ujson
 import numpy as np
 from collections import defaultdict
-
-from sympy.physics.units import steradian
-
 import config
 from Recognizer import recognizer
 from utils.bytes_to_samples_audio import get_np_array_samples_float32
@@ -16,7 +10,6 @@ from utils.slow_down_audio import do_slow_down_audio
 from utils.do_logging import logger
 from dataclasses import asdict
 from onnx_asr.utils import read_wav_files, pad_list
-
 
 
 def calc_speed(data):
@@ -216,12 +209,12 @@ async def simple_recognise_batch(list_audio_data: list, batch_size: int = 8) -> 
 
     # Объединяем в кортежи
     preprocessed = list(zip(X_batches, y_batches))
-    print(f"Препроцессинг за {(datetime.datetime.now() - start_preprocess).total_seconds()} секунд.")
+    logger.debug(f"Препроцессинг за {(datetime.datetime.now() - start_preprocess).total_seconds()} секунд.")
 
     start_encoding = datetime.datetime.now()
     for preprocessed_batch in preprocessed:
         list_of_encoded_data.append(recognizer.asr._encode(*preprocessed_batch))
-    print(f"Энкодинг за {(datetime.datetime.now() - start_encoding).total_seconds()} секунд.")
+    logger.debug(f"Энкодинг за {(datetime.datetime.now() - start_encoding).total_seconds()} секунд.")
 
     x_merged_encoded_data = np.concatenate([X for X, _ in list_of_encoded_data], axis=0)
     y_merged_encoded_data = np.concatenate([y for _, y in list_of_encoded_data], axis=0)
@@ -231,7 +224,7 @@ async def simple_recognise_batch(list_audio_data: list, batch_size: int = 8) -> 
     result = (recognizer.asr._decode_tokens(*tup_decoded) for tup_decoded in decoded_list)
 
     list_of_dict_result = [asdict(res) for res in result]
-    print(f"Полное распознавание за {(datetime.datetime.now() - start_recognition).total_seconds()} секунд.")
+    logger.debug(f"Полное распознавание за {(datetime.datetime.now() - start_recognition).total_seconds()} секунд.")
 
     return list_of_dict_result
 

@@ -13,7 +13,7 @@ from utils.do_logging import logger
 from utils.chunk_doing import find_last_speech_position
 from utils.pre_start_init import audio_buffer, audio_overlap, audio_to_asr, audio_duration,ws_collected_asr_res
 from utils.send_messages import send_messages
-from utils.tokens_to_Result import process_asr_json, process_gigaam_asr
+from utils.tokens_to_Result import process_asr_json_deprecated, process_gigaam_asr
 from utils.resamppling import resample_audiosegment
 
 from Recognizer.engine.sentensizer import do_sensitizing
@@ -118,7 +118,7 @@ async def websocket(ws: WebSocket):
             else:
                 try:
                     asr_result = await simple_recognise(audio_to_asr[client_id][-1])
-                    asr_result_words = await process_asr_json(asr_result, audio_duration[client_id])
+                    asr_result_words = await process_asr_json_deprecated(asr_result, audio_duration[client_id])
                     audio_duration[client_id] += audio_to_asr[client_id][-1].duration_seconds
                     logger.debug(asr_result_words)
 
@@ -192,7 +192,7 @@ async def websocket(ws: WebSocket):
             error_description = f"Ошибка дополнения тишиной последнего чанка - {e} in channel {channel_name}"
         else:
             last_asr_result_w_conf = await simple_recognise(audio_to_asr[client_id][-1])
-            last_result = await process_asr_json(last_asr_result_w_conf, audio_duration[client_id])
+            last_result = await process_asr_json_deprecated(last_asr_result_w_conf, audio_duration[client_id])
             logger.debug(f'Последний результат {last_result.get("data").get("text")} in channel {channel_name}')
 
             # Добавляем ответ для пунктуации

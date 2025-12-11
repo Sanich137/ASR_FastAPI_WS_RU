@@ -6,7 +6,7 @@ from sympy.physics.units import speed
 from utils.do_logging import logger
 
 # Парсим JSON
-async def process_asr_json(input_json, time_shift = 0.0):
+async def process_asr_json_deprecated(input_json, time_shift = 0.0):
     data = input_json
     # Формируем шаблон результата
     result = {"data": {"result": [], "text": ""}}
