@@ -65,8 +65,8 @@ gigaam-v2-ctc
 gigaam-v2-rnnt 
 gigaam-v3-ctc
 gigaam-v3-rnnt
-gigaam-v3-e2e-ctc
-gigaam-v3-e2e-rnnt
+gigaam-v3-e2e-ctc   / При использовании не запрашивайте пунктуацию 
+gigaam-v3-e2e-rnnt  / При использовании не запрашивайте пунктуацию
 t-tech/t-one
 
 = пока не поддерживааются = 
