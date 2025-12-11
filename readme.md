@@ -59,12 +59,19 @@ source activate-cuda-12.4.sh
 - Загрузка моделей производится приложением самостоятельно при указании модели в окружении. При необходимости, модели можно положить в папку "./models/hub". Например "models/hub/models--alphacep--vosk-model-ru" 
 - Список доступных моделей на 05.12.2025:
 ```commandline
+
+= проверены и поддерживааются =
 gigaam-v2-ctc
 gigaam-v2-rnnt 
 gigaam-v3-ctc
 gigaam-v3-rnnt
 gigaam-v3-e2e-ctc
 gigaam-v3-e2e-rnnt
+t-tech/t-one
+
+= пока не поддерживааются = 
+alphacep/vosk-model-ru
+alphacep/vosk-model-small-ru
 nemo-fastconformer-ru-ctc
 nemo-fastconformer-ru-rnnt
 nemo-parakeet-ctc-0.6b
@@ -73,9 +80,6 @@ nemo-parakeet-tdt-0.6b-v2
 nemo-parakeet-tdt-0.6b-v3
 nemo-canary-1b-v2
 whisper-base
-alphacep/vosk-model-ru
-alphacep/vosk-model-small-ru
-t-tech/t-one
 onnx-community/whisper-tiny
 onnx-community/whisper-base
 onnx-community/whisper-small
@@ -217,6 +221,7 @@ sudo systemctl enable vosk_gpu
 свяжитесь со мной через [GitHub Issues](https://github.com/Sanich137/ASR_FastAPI_WS_RU_sherpa-onnx/issues) или [GitHub Discussions](https://github.com/Sanich137/ASR_FastAPI_WS_RU_sherpa-onnx/discussions)
 
 ## Работы
+- 11 декабря 2025 года - добавлена батчинг и поддержка RTX для ctc и частично rnnt моделей. 
 - 05 декабря 2025 год - миграция с sherpa-onnx на onnx-asr.
 - 07 августа 2025 года - оптимизирован код для разумного использования памяти GPU и CPU. Теперь размер модели диаризации может быть использован в GPU с памятью от 8 Gb 
 - 01 августа 2025 года - добавлена поддержка Gigaam_rnnt_v2 модели. 
