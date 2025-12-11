@@ -1,7 +1,13 @@
+import datetime
 from datetime import datetime as dt
+from turtledemo.penrose import start
+
 import ujson
 import numpy as np
 from collections import defaultdict
+
+from sympy.physics.units import steradian
+
 import config
 from Recognizer import recognizer
 from utils.bytes_to_samples_audio import get_np_array_samples_float32
@@ -9,6 +15,9 @@ from utils.resamppling import resample_audiosegment
 from utils.slow_down_audio import do_slow_down_audio
 from utils.do_logging import logger
 from dataclasses import asdict
+from onnx_asr.utils import read_wav_files, pad_list
+
+
 
 def calc_speed(data):
     time_to_speak_tokens = 0
@@ -157,8 +166,10 @@ async def recognise_w_speed_correction(audio_data, multiplier=float(1.0), can_sl
 
 async def simple_recognise_batch(list_audio_data: list, batch_size: int = 8) -> list:
     logger.info(f"Выполняется батчинг с размером {batch_size}")
+    start_recognition = datetime.datetime.now()
 
     list_of_samples = []
+    list_of_lens = []
     max_samples = int(config.MAX_OVERLAP_DURATION * config.BASE_SAMPLE_RATE)
 
     # Перевод в семплы и выравнивание по длине
@@ -171,28 +182,56 @@ async def simple_recognise_batch(list_audio_data: list, batch_size: int = 8) -> 
             padded_samples = np.zeros(max_samples, dtype=np.float32)
             padded_samples[:len(samples)] = samples
             list_of_samples.append(padded_samples)
+            list_of_lens.append(padded_samples)
         elif len(samples) > max_samples:
             # Обрезка до максимальной длины
             logger.warning(f"Аудио длиной {len(samples) / config.BASE_SAMPLE_RATE:.2f} сек. "
                            f"превышает MAX_OVERLAP_DURATION ({config.MAX_OVERLAP_DURATION} сек.). "
                            f"Будет обрезано до {max_samples} семплов.")
             list_of_samples.append(samples[:max_samples])
+            list_of_lens.append(len(samples[:max_samples]))
+
         else:
             # Идеальный размер
             list_of_samples.append(samples)
+            list_of_lens.append(samples)
 
-    list_of_dict_result = []
-    for i in range(0, len(list_of_samples), batch_size):
-        batch = list_of_samples[i:min(i + batch_size, len(list_of_samples))]
+    waveform = *pad_list(list_of_samples), config.BASE_SAMPLE_RATE
+    resampled = recognizer.resampler(*waveform)
 
-        # Преобразуем список массивов в один тензор (для некоторых ASR моделей)
-        # Если ваша recognizer.recognize ожидает список, можно пропустить этот шаг
-        # batch_array = np.stack(batch)  # Создаем единый тензор
+    # Делаем препроцессинг на все данные сразу
+    start_preprocess = datetime.datetime.now()
+    preprocessed = recognizer.asr._preprocessor(*resampled)
 
-        result = recognizer.recognize(batch, sample_rate=config.BASE_SAMPLE_RATE)
+    list_of_encoded_data = list()
+    X, y = preprocessed
+    n_samples = X.shape[0]
 
-        for part_res in result:
-            list_of_dict_result.append(asdict(part_res))
+    # Вычисляем количество батчей
+    n_batches = int(np.ceil(n_samples / batch_size))
+
+    # Разбиваем массивы
+    X_batches = np.array_split(X, n_batches)
+    y_batches = np.array_split(y, n_batches)
+
+    # Объединяем в кортежи
+    preprocessed = list(zip(X_batches, y_batches))
+    print(f"Препроцессинг за {(datetime.datetime.now() - start_preprocess).total_seconds()} секунд.")
+
+    start_encoding = datetime.datetime.now()
+    for preprocessed_batch in preprocessed:
+        list_of_encoded_data.append(recognizer.asr._encode(*preprocessed_batch))
+    print(f"Энкодинг за {(datetime.datetime.now() - start_encoding).total_seconds()} секунд.")
+
+    x_merged_encoded_data = np.concatenate([X for X, _ in list_of_encoded_data], axis=0)
+    y_merged_encoded_data = np.concatenate([y for _, y in list_of_encoded_data], axis=0)
+    encoded = (x_merged_encoded_data, y_merged_encoded_data)
+
+    decoded_list = list(recognizer.asr._decoding(*encoded, None))
+    result = (recognizer.asr._decode_tokens(*tup_decoded) for tup_decoded in decoded_list)
+
+    list_of_dict_result = [asdict(res) for res in result]
+    print(f"Полное распознавание за {(datetime.datetime.now() - start_recognition).total_seconds()} секунд.")
 
     return list_of_dict_result
 

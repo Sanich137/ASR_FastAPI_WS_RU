@@ -31,14 +31,14 @@ SPEECH_PER_SEC_NORM_RATE = 18  # Нормальное количество то�
 # в интервале от 13 до 25.
 MAKE_MONO = True if int(os.getenv('MAKE_MONO', 0)) == 1 else False
 USE_BATCH = True if int(os.getenv('USE_BATCH', 1)) == 1 else False
-ASR_DEFAULT_BATCH_SIZE = 4  # Размер батча для распознавания аудио.
+ASR_BATCH_SIZE = int(os.getenv('VAD_SENSE', 16))   # Размер батча для распознавания аудио.
 
 # Vad_settings
 VAD_SENSITIVITY = int(os.getenv('VAD_SENSE', 3))  # 1 to 5 Higher - more words.
 VAD_WITH_GPU = True if int(os.getenv('VAD_WITH_GPU', 0)) == 1 else False
 
 # Sentensize_settings
-BETWEEN_WORDS_PERCENTILE = int(os.getenv('BETWEEN_WORDS_PERCENTILE', 90)) # Параметр определяет как мелко будет биться
+BETWEEN_WORDS_PERCENTILE = int(os.getenv('BETWEEN_WORDS_PERCENTILE', 80)) # Параметр определяет как мелко будет биться
 # текст на предложения. Чем меньше значение, тем более короткие будут предложения. В среднем в одном предложении 10 слов.
 # То есть, по длительности каждая десятая пауза означает конец предложения или мысли. Влияет на пунктуацию выражений.
 

@@ -22,7 +22,7 @@ def get_file_request(
     do_diarization: bool = Form(default=False, description="Разделять по спикерам."),
     diar_vad_sensity: int = Form(default=3, description="Чувствительность VAD."),
     use_batch: bool = Form(default=config.USE_BATCH, description="Использовать батчинг для ASR."),
-    batch_size: int = Form(default=config.ASR_DEFAULT_BATCH_SIZE, description="Размер батча для ASR."),
+    batch_size: int = Form(default=config.ASR_BATCH_SIZE, description="Размер батча для ASR."),
     do_auto_speech_speed_correction: bool = Form(default=True, description="Корректировать скорость речи при распознавании."),
     speech_speed_correction_multiplier: float = Form(default=1, description="Базовый коэффициент скорости речи."),
     make_mono: bool = Form(default=False, description="Соединить несколько каналов в mono"),
@@ -68,7 +68,7 @@ async def async_receive_file(
         result["error_description"] = error_description
         return result
     else:
-        logger.debug(f"Получен и сохранён файл {file.filename}")
+        logger.info(f"Получен и сохранён файл {file.filename}")
         try:
             # Запускаем обработку в потоке
             result = await asyncio.to_thread(process_file, buffer, params)
