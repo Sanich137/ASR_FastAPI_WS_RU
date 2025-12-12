@@ -31,7 +31,7 @@ SPEECH_PER_SEC_NORM_RATE = 18  # Нормальное количество то�
 # в интервале от 13 до 25.
 MAKE_MONO = True if int(os.getenv('MAKE_MONO', 0)) == 1 else False
 USE_BATCH = True if int(os.getenv('USE_BATCH', 1)) == 1 else False
-ASR_BATCH_SIZE = int(os.getenv('ASR_BATCH_SIZE', 16))   # Размер батча для распознавания аудио.
+ASR_BATCH_SIZE = int(os.getenv('ASR_BATCH_SIZE', 8))   # Размер батча для распознавания аудио.
 
 # Vad_settings
 VAD_SENSITIVITY = int(os.getenv('VAD_SENSE', 3))  # 1 to 5 Higher - more words.

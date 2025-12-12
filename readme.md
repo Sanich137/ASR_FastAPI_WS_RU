@@ -69,21 +69,27 @@ gigaam-v3-e2e-ctc   / При использовании не запрашива�
 gigaam-v3-e2e-rnnt  / При использовании не запрашивайте пунктуацию
 t-tech/t-one
 
-= пока не поддерживааются = 
+= поддержка частично, ошибки в собирании слов =
 alphacep/vosk-model-ru
 alphacep/vosk-model-small-ru
 nemo-fastconformer-ru-ctc
 nemo-fastconformer-ru-rnnt
+
+= запуск возможен, ошибки обработки вывода = 
+onnx-community/whisper-tiny
+onnx-community/whisper-base
+onnx-community/whisper-small
+onnx-community/whisper-large-v3-turbo ... и так далее для OpenAI Whisper экспортированных моделей в Hugging Face optimum onnx-community.
+
+
+= пока не проверены и не поддерживааются = 
 nemo-parakeet-ctc-0.6b
 nemo-parakeet-rnnt-0.6b
 nemo-parakeet-tdt-0.6b-v2
 nemo-parakeet-tdt-0.6b-v3
 nemo-canary-1b-v2
 whisper-base
-onnx-community/whisper-tiny
-onnx-community/whisper-base
-onnx-community/whisper-small
-onnx-community/whisper-large-v3-turbo ... и так далее для OpenAI Whisper экспортированных моделей в Hugging Face optimum onnx-community.
+
 ```
 
  
