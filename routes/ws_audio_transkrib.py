@@ -17,7 +17,7 @@ from utils.tokens_to_Result import process_asr_json_deprecated, process_gigaam_a
 from utils.resamppling import async_resample_audiosegment
 
 from Recognizer.engine.sentensizer import do_sensitizing
-from Recognizer.engine.stream_recognition import recognise_w_calculate_confidence, simple_recognise
+from Recognizer.engine.stream_recognition import simple_recognise
 
 
 @app.websocket("/ws")

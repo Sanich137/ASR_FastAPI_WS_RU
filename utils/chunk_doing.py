@@ -1,4 +1,6 @@
 import config
+import numpy as np
+from pydub import AudioSegment
 from utils.do_logging import logger
 from utils.bytes_to_samples_audio import get_np_array_samples_float32
 
@@ -6,12 +8,10 @@ from utils.pre_start_init import (audio_overlap,
                                   audio_buffer,
                                   audio_to_asr,
                                   )
-from pydub import AudioSegment
+
 from VoiceActivityDetector import vad
 from utils.resamppling import async_resample_audiosegment
 
-import numpy as np
-from pydub import AudioSegment
 
 async def find_last_speech_position(socket_id, is_last_chunk):
     """
