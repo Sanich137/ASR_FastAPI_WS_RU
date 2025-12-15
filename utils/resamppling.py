@@ -4,7 +4,9 @@ import librosa
 from pydub import AudioSegment
 import asyncio
 
+
 async def resample_audiosegment(audio_data: AudioSegment, target_sample_rate: int) -> AudioSegment:
+
     """
     Выполняет ресемплинг аудиоданных из AudioSegment в заданную частоту дискретизации, сохраняя каналы.
     Блокирующие операции выполняются в отдельном потоке, чтобы не блокировать цикл событий.

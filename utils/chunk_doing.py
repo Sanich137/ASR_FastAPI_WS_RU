@@ -57,7 +57,7 @@ async def find_last_speech_position(socket_id, is_last_chunk):
         audio_for_vad = audio_overlap[socket_id]+audio_for_vad
         # Переводим в float32 для VAD
         try:
-            audio = await get_np_array_samples_float32(audio_for_vad.raw_data, audio_for_vad.sample_width)
+            audio = get_np_array_samples_float32(audio_for_vad.raw_data, audio_for_vad.sample_width)
             logger.debug(f"Аудио для VAD: длина={len(audio)}, min={np.min(audio)}, max={np.max(audio)}")
         except Exception as e:
             logger.error(f"Ошибка в get_np_array_samples_float32: {e}")
@@ -146,3 +146,25 @@ async def find_last_speech_position(socket_id, is_last_chunk):
             audio_buffer[socket_id] = AudioSegment.silent(1, frame_rate)
 
     return
+
+
+def samples_padding(samples, sample_rate = config.BASE_SAMPLE_RATE, duration = config.MAX_OVERLAP_DURATION) -> np.ndarray:
+
+    max_samples_len = int(duration * sample_rate)
+    # Выравнивание до максимальной длины
+    if len(samples) < max_samples_len:
+        # Дополнение тишиной (нулями) до нужной длины
+        padded_samples = np.zeros(max_samples_len, dtype=np.float32)
+        padded_samples[:len(samples)] = samples
+    elif len(samples) > max_samples_len:
+        # Обрезка до максимальной длины
+        logger.warning(f"Аудио длиной {len(samples) / config.BASE_SAMPLE_RATE:.2f} сек. "
+                       f"превышает MAX_OVERLAP_DURATION ({config.MAX_OVERLAP_DURATION} сек.). "
+                       f"Будет обрезано до {max_samples_len} семплов.")
+        padded_samples = samples[:max_samples_len]
+
+    else:
+        # Идеальный размер
+        padded_samples = samples
+
+    return padded_samples

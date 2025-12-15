@@ -1,4 +1,6 @@
+import asyncio
 import datetime
+import time
 import ujson
 import numpy as np
 from collections import defaultdict
@@ -8,6 +10,7 @@ from utils.bytes_to_samples_audio import get_np_array_samples_float32
 from utils.resamppling import resample_audiosegment
 from utils.slow_down_audio import do_slow_down_audio
 from utils.do_logging import logger
+from utils.chunk_doing import samples_padding
 from dataclasses import asdict
 from onnx_asr.utils import read_wav_files, pad_list
 
@@ -63,7 +66,7 @@ async def recognise_w_calculate_confidence(audio_data,
     for _ in range(num_trials):
         stream = recognizer.create_stream()
         # перевод в семплы для распознавания.
-        samples = await get_np_array_samples_float32(audio_data.raw_data, 2)
+        samples = get_np_array_samples_float32(audio_data.raw_data, 2)
         # передали аудиофрагмент на распознавание
 
         stream.accept_waveform(sample_rate=audio_data.frame_rate, waveform=samples)
@@ -118,7 +121,7 @@ async def simple_recognise(audio_data, ) -> dict:
         audio_data = await resample_audiosegment(audio_data, config.BASE_SAMPLE_RATE)
 
     # Перевод в семплы для распознавания.
-    samples = await get_np_array_samples_float32(audio_data.raw_data, audio_data.sample_width)
+    samples = get_np_array_samples_float32(audio_data.raw_data, audio_data.sample_width)
     result = asdict(recognizer.recognize(samples, sample_rate=config.BASE_SAMPLE_RATE))
 
     return result
@@ -157,46 +160,26 @@ async def recognise_w_speed_correction(audio_data, multiplier=float(1.0), can_sl
     return result, speed, multiplier
 
 
-async def simple_recognise_batch(list_audio_data: list, batch_size: int = 8) -> list:
+def simple_recognise_batch(list_audio_data: list, batch_size: int = 8) -> list:
     logger.info(f"Выполняется батчинг с размером {batch_size}")
-    start_recognition = datetime.datetime.now()
 
-    list_of_samples = []
-    list_of_lens = []
-    max_samples = int(config.MAX_OVERLAP_DURATION * config.BASE_SAMPLE_RATE)
+    timer_sync_start = time.perf_counter()
+    list_of_all_samples = [get_np_array_samples_float32(audio_data.raw_data, audio_data.sample_width)
+                                                for audio_data in list_audio_data]
+    logger.debug(f"Перевод в семплы в последовательно - {time.perf_counter() - timer_sync_start} сек.")
 
-    # Перевод в семплы и выравнивание по длине
-    for audio_data in list_audio_data:
-        samples = await get_np_array_samples_float32(audio_data.raw_data, audio_data.sample_width)
+    # и выравнивание по длине
+    list_of_padded_samples = [samples_padding(samples_to_pad) for samples_to_pad in list_of_all_samples]
 
-        # Выравнивание до максимальной длины
-        if len(samples) < max_samples:
-            # Дополнение тишиной (нулями) до нужной длины
-            padded_samples = np.zeros(max_samples, dtype=np.float32)
-            padded_samples[:len(samples)] = samples
-            list_of_samples.append(padded_samples)
-            list_of_lens.append(padded_samples)
-        elif len(samples) > max_samples:
-            # Обрезка до максимальной длины
-            logger.warning(f"Аудио длиной {len(samples) / config.BASE_SAMPLE_RATE:.2f} сек. "
-                           f"превышает MAX_OVERLAP_DURATION ({config.MAX_OVERLAP_DURATION} сек.). "
-                           f"Будет обрезано до {max_samples} семплов.")
-            list_of_samples.append(samples[:max_samples])
-            list_of_lens.append(len(samples[:max_samples]))
-
-        else:
-            # Идеальный размер
-            list_of_samples.append(samples)
-            list_of_lens.append(samples)
-
-    waveform = *pad_list(list_of_samples), config.BASE_SAMPLE_RATE
+    waveform = *pad_list(list_of_padded_samples), config.BASE_SAMPLE_RATE
     resampled = recognizer.resampler(*waveform)
 
     # Делаем препроцессинг на все данные сразу
-    start_preprocess = datetime.datetime.now()
+    start_preprocess = time.perf_counter()
     preprocessed = recognizer.asr._preprocessor(*resampled)
+    logger.debug(f"Препроцессинг за {(time.perf_counter() - start_preprocess):.4f} секунд.")
 
-    list_of_encoded_data = list()
+    # Разбиваем на батчи заданного размера
     X, y = preprocessed
     n_samples = X.shape[0]
 
@@ -209,22 +192,23 @@ async def simple_recognise_batch(list_audio_data: list, batch_size: int = 8) -> 
 
     # Объединяем в кортежи
     preprocessed = list(zip(X_batches, y_batches))
-    logger.debug(f"Препроцессинг за {(datetime.datetime.now() - start_preprocess).total_seconds()} секунд.")
 
-    start_encoding = datetime.datetime.now()
-    for preprocessed_batch in preprocessed:
-        list_of_encoded_data.append(recognizer.asr._encode(*preprocessed_batch))
-    logger.debug(f"Энкодинг за {(datetime.datetime.now() - start_encoding).total_seconds()} секунд.")
+    start_encoding = time.perf_counter()
+    list_of_dict_result = list()
+    for waveform, waveform_len in preprocessed:
+        # ASR распознавание
+        encoded_batch = recognizer.asr._encode(waveform, waveform_len)
 
-    x_merged_encoded_data = np.concatenate([X for X, _ in list_of_encoded_data], axis=0)
-    y_merged_encoded_data = np.concatenate([y for _, y in list_of_encoded_data], axis=0)
-    encoded = (x_merged_encoded_data, y_merged_encoded_data)
+        # Сразу же декодируем результат для этого батча
+        decoded_batch = list(recognizer.asr._decoding(*encoded_batch, None))
+        result_batch = (recognizer.asr._decode_tokens(*tup_decoded) for tup_decoded in decoded_batch)
 
-    decoded_list = list(recognizer.asr._decoding(*encoded, None))
-    result = (recognizer.asr._decode_tokens(*tup_decoded) for tup_decoded in decoded_list)
+        # Добавляем финальный результат для батча в общий список
+        list_of_dict_result.extend([asdict(res) for res in result_batch])
 
-    list_of_dict_result = [asdict(res) for res in result]
-    logger.debug(f"Полное распознавание за {(datetime.datetime.now() - start_recognition).total_seconds()} секунд.")
+    logger.debug(f"Время на распознавание за {(time.perf_counter() - start_encoding):.4f} секунд.")
+
+
 
     return list_of_dict_result
 

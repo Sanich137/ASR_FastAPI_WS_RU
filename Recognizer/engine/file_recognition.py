@@ -118,8 +118,7 @@ def process_file(tmp_path, params):
 
         if params.use_batch:
             logger.info("Запрошен батчинг")
-            list_asr_result_wo_conf = asyncio.run(simple_recognise_batch(audio_to_asr[post_id],params.batch_size),
-                                                  )  # --> list
+            list_asr_result_wo_conf = simple_recognise_batch(audio_to_asr[post_id],params.batch_size)  # --> list
 
             for _, asr_result_wo_conf in enumerate(list_asr_result_wo_conf):
 

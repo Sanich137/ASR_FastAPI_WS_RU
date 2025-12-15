@@ -30,7 +30,7 @@ async def do_slow_down_audio(audio_segment: AudioSegment, slowdown_rate: float) 
     raw_data = audio_segment.raw_data
 
     # Конвертация в float32 массив
-    samples_float32 = await get_np_array_samples_float32(raw_data, sample_width)
+    samples_float32 = get_np_array_samples_float32(raw_data, sample_width)
 
     # Расчет новых размеров
     original_length = len(samples_float32)

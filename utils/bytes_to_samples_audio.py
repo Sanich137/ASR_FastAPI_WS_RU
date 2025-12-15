@@ -1,10 +1,13 @@
-import numpy as np
+from turtledemo.penrose import start
 
 import numpy as np
+from  time import perf_counter
 import logging
 
+import config
 
-async def get_np_array_samples_float32(audio_bytes: bytes, sample_width: int = 2) -> np.ndarray:
+
+def get_np_array_samples_float32(audio_bytes: bytes, sample_width: int = 2) -> np.ndarray:
     """
     Преобразует аудио в байтах в массив float32.
     :param audio_bytes: Аудиоданные в байтах.
@@ -12,7 +15,7 @@ async def get_np_array_samples_float32(audio_bytes: bytes, sample_width: int = 2
     :return: Массив numpy с данными в формате float32.
     """
     logger = logging.getLogger(__name__)
-
+    timer_start = perf_counter()
     # Проверка входных данных
     if not audio_bytes:
         logger.error("Ошибка: audio_bytes пустой")
@@ -55,11 +58,18 @@ async def get_np_array_samples_float32(audio_bytes: bytes, sample_width: int = 2
 
         logger.debug(
             f"Длина samples_float32: {len(samples_float32)}, min={np.min(samples_float32)}, max={np.max(samples_float32)}")
+
+        end_timer = perf_counter()
+        logger.debug(f"Время на конвертацию аудио длинной {len(samples)/config.BASE_SAMPLE_RATE} сек. затрачено {(end_timer-timer_start)} сек.")
         return samples_float32
 
     except Exception as e:
         logger.error(f"Ошибка в get_np_array_samples_float32: {e}")
         raise
+
+
+
+
 
 async def get_np_array_samples_int16(audio_bytes: bytes, sample_width: int = 2) -> np.ndarray:
     """
