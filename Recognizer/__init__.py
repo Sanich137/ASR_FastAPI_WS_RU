@@ -23,7 +23,7 @@ CPU_providers = ["CPUExecutionProvider"]
 class Recognizer:
     def __init__(self):
         self.model_name = config.MODEL_NAME
-        self._post_processor = tokens_to_Result.process_gigaam_json_output
+        self._post_processor = tokens_to_Result.process_single_token_vocab_output
         self.preprocessor_providers = list()
         self.encoding_providers = list()
         self.resampler_providers = list()
@@ -40,7 +40,7 @@ class Recognizer:
             case _ :
                 self.preprocessor_providers = self.encoding_providers = self.resampler_providers = CPU_providers
                 logger.info("Using CPU provider")
-                cpu_preprocessing = True
+                self.cpu_preprocessing = True
 
         # Некоторые модели не поддерживают TensorrtExecutionProvider или поддерживают его частично. Чистим
         if "vosk" in self.model_name:
@@ -50,26 +50,33 @@ class Recognizer:
             if "TensorrtExecutionProvider" in self.resampler_providers:
                  self.resampler_providers.remove("TensorrtExecutionProvider")
 
-            self._post_processor = tokens_to_Result.process_asr_json_deprecated
+            self._post_processor = tokens_to_Result.process_multi_tokens_vocab_output
+
+        elif "t-one" in self.model_name:
+
+            if "TensorrtExecutionProvider" in self.resampler_providers:
+                self.resampler_providers.remove("TensorrtExecutionProvider")
+
+            self._post_processor = tokens_to_Result.process_single_token_vocab_output
 
         elif "giga" in self.model_name:
 
             if "TensorrtExecutionProvider" in self.resampler_providers:
                 self.resampler_providers.remove("TensorrtExecutionProvider")
 
-            self._post_processor = tokens_to_Result.process_gigaam_json_output
+            self._post_processor = tokens_to_Result.process_single_token_vocab_output
 
         elif "whisper" in self.model_name:
             if "TensorrtExecutionProvider" in self.encoding_providers:
                 self.encoding_providers.remove("TensorrtExecutionProvider")
 
-            self._post_processor = tokens_to_Result.process_asr_json_deprecated
+            self._post_processor = tokens_to_Result.process_multi_tokens_vocab_output
 
         elif "fastconformer" in self.model_name:
 
             if "TensorrtExecutionProvider" in self.encoding_providers:
                 self.encoding_providers.remove("TensorrtExecutionProvider")
-            self._post_processor = tokens_to_Result.process_asr_json_deprecated
+            self._post_processor = tokens_to_Result.process_multi_tokens_vocab_output
 
         session_options = ort.SessionOptions()
         session_options.log_severity_level = 4  # Выключаем подробный лог

@@ -68,14 +68,12 @@ gigaam-v3-rnnt
 gigaam-v3-e2e-ctc   / При использовании не запрашивайте пунктуацию 
 gigaam-v3-e2e-rnnt  / При использовании не запрашивайте пунктуацию
 t-tech/t-one
-
-= поддержка частично, ошибки в собирании слов =
 alphacep/vosk-model-ru
 alphacep/vosk-model-small-ru
-nemo-fastconformer-ru-ctc
-nemo-fastconformer-ru-rnnt
+nemo-fastconformer-ru-ctc / Своя пунктуация, пока выдаём лишние пробелы
+nemo-fastconformer-ru-rnnt / Своя пунктуация, пока выдаём лишние пробелы
 
-= запуск возможен, ошибки обработки вывода = 
+= запуск возможен, ошибки обработки вывода = (нет меток времени)
 onnx-community/whisper-tiny
 onnx-community/whisper-base
 onnx-community/whisper-small

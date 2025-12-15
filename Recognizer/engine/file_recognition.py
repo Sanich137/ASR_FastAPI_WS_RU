@@ -151,7 +151,7 @@ def process_file(tmp_path, params):
                     logger.error(f"Error ASR audio - {e}")
                     error_description = f"Error ASR audio - {e}"
                 else:
-                    asr_result = recognizer.json_output_adapter(asr_result_wo_conf, audio_duration[post_id])
+                    asr_result = recognizer.apply_postprocessing(asr_result_wo_conf, audio_duration[post_id])
 
                     result["raw_data"][f"channel_{n_channel + 1}"].append(asr_result)
 

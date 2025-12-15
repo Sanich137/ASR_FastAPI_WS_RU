@@ -6,7 +6,7 @@ from sympy.physics.units import speed
 from utils.do_logging import logger
 
 # Парсим JSON
-def process_asr_json_deprecated(input_json, time_shift = 0.0, multiplier=1):
+def process_multi_tokens_vocab_output(input_json, time_shift = 0.0, multiplier=1):
     data = input_json
     # Формируем шаблон результата
     result = {"data": {"result": [], "text": ""}}
@@ -59,7 +59,7 @@ def process_asr_json_deprecated(input_json, time_shift = 0.0, multiplier=1):
     return result
 
 
-def process_gigaam_json_output(input_json, time_shift=0.0, multiplier=1):
+def process_single_token_vocab_output(input_json, time_shift=0.0, multiplier=1):
     """
 
     :param input_json: Входящий результат распознавания
@@ -150,5 +150,5 @@ if __name__ == "__main__":
                        'т', 'а', 'м', ' ', 'т', 'е', 'б', 'е', ' ', 'п', 'о', 'г', 'о', 'в', 'о', 'р', 'и', 'л', ' ',
                        'э', 'т', 'о', 'г', 'о', ' ', 'д', 'о', 'с', 'т', 'а', 'т', 'о', 'ч', 'н', 'о'], 'words': []}
 
-    res = process_gigaam_json_output(json)
+    res = process_single_token_vocab_output(json)
     print(res)

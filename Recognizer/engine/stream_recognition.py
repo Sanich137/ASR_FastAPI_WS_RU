@@ -48,7 +48,7 @@ async def simple_recognise(audio_data, ) -> dict:
 
     # Перевод в семплы для распознавания.
     samples = get_np_array_samples_float32(audio_data.raw_data, audio_data.sample_width)
-    result = asdict(asr_recogniser.recognizer.recognize(samples, sample_rate=config.BASE_SAMPLE_RATE))
+    result = asdict(recognizer.recognize(samples, sample_rate=config.BASE_SAMPLE_RATE))
 
     return result
 
