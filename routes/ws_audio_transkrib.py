@@ -246,15 +246,3 @@ async def websocket(ws: WebSocket):
     except Exception as e:
         logger.error(f"error clearing globals after NORMAL closing socket - {e} in channel {channel_name}")
     return
-
-    # try:
-    #     print(f'/n \
-    #     audio_overlap = {audio_overlap} \
-    #     audio_buffer = {audio_buffer} \
-    #     audio_to_asr = {audio_to_asr} \
-    #     audio_duration = {audio_duration} \
-    #     ws_collected_asr_res = {ws_collected_asr_res} \
-    #         ')
-    # except Exception as e:
-    #     logger.error(f"Error printing globals - {e}")
-

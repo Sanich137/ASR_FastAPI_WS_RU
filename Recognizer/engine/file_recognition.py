@@ -122,7 +122,7 @@ def process_file(tmp_path, params):
 
             for _, asr_result_wo_conf in enumerate(list_asr_result_wo_conf):
 
-                asr_result = asyncio.run(process_gigaam_asr(asr_result_wo_conf, audio_duration[post_id]))
+                asr_result = process_gigaam_asr(asr_result_wo_conf, audio_duration[post_id])
 
                 result["raw_data"][f"channel_{n_channel + 1}"].append(asr_result)
                 with audio_lock:
@@ -147,7 +147,7 @@ def process_file(tmp_path, params):
                     logger.error(f"Error ASR audio - {e}")
                     error_description = f"Error ASR audio - {e}"
                 else:
-                    asr_result = asyncio.run(process_gigaam_asr(asr_result_wo_conf, audio_duration[post_id]))
+                    asr_result = process_gigaam_asr(asr_result_wo_conf, audio_duration[post_id])
 
                     result["raw_data"][f"channel_{n_channel + 1}"].append(asr_result)
 

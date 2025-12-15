@@ -59,7 +59,7 @@ async def process_asr_json_deprecated(input_json, time_shift = 0.0):
     return result
 
 
-async def process_gigaam_asr(input_json, time_shift=0.0, multiplier=1):
+def process_gigaam_asr(input_json, time_shift=0.0, multiplier=1):
     """
 
     :param input_json: Входящий результат распознавания
@@ -150,5 +150,5 @@ if __name__ == "__main__":
                        'т', 'а', 'м', ' ', 'т', 'е', 'б', 'е', ' ', 'п', 'о', 'г', 'о', 'в', 'о', 'р', 'и', 'л', ' ',
                        'э', 'т', 'о', 'г', 'о', ' ', 'д', 'о', 'с', 'т', 'а', 'т', 'о', 'ч', 'н', 'о'], 'words': []}
 
-    res = asyncio.run(process_gigaam_asr(json))
+    res = process_gigaam_asr(json)
     print(res)
