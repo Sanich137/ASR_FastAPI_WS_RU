@@ -4,7 +4,6 @@ from pydub import AudioSegment
 import config
 import asyncio
 import uuid
-from utils.tokens_to_Result import process_asr_json_deprecated, process_gigaam_asr
 from utils.pre_start_init import (
     posted_and_downloaded_audio,
     audio_buffer,
@@ -15,6 +14,7 @@ from utils.pre_start_init import (
 from utils.do_logging import logger
 from utils.chunk_doing import find_last_speech_position
 from utils.resamppling import sync_resample_audiosegment
+from Recognizer import recognizer
 from Recognizer.engine.stream_recognition import simple_recognise, recognise_w_speed_correction, simple_recognise_batch
 from Recognizer.engine.sentensizer import do_sensitizing
 from Recognizer.engine.echoe_clearing import remove_echo
@@ -126,7 +126,7 @@ def process_file(tmp_path, params):
 
             for _, asr_result_wo_conf in enumerate(list_asr_result_wo_conf):
 
-                asr_result = process_gigaam_asr(asr_result_wo_conf, audio_duration[post_id])
+                asr_result = recognizer.apply_postprocessing(asr_result_wo_conf, audio_duration[post_id])
 
                 result["raw_data"][f"channel_{n_channel + 1}"].append(asr_result)
                 with audio_lock:
@@ -151,7 +151,7 @@ def process_file(tmp_path, params):
                     logger.error(f"Error ASR audio - {e}")
                     error_description = f"Error ASR audio - {e}"
                 else:
-                    asr_result = process_gigaam_asr(asr_result_wo_conf, audio_duration[post_id])
+                    asr_result = recognizer.json_output_adapter(asr_result_wo_conf, audio_duration[post_id])
 
                     result["raw_data"][f"channel_{n_channel + 1}"].append(asr_result)
 
