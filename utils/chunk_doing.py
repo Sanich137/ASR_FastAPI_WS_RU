@@ -8,7 +8,7 @@ from utils.pre_start_init import (audio_overlap,
                                   )
 from pydub import AudioSegment
 from VoiceActivityDetector import vad
-from utils.resamppling import resample_audiosegment
+from utils.resamppling import async_resample_audiosegment
 
 import numpy as np
 from pydub import AudioSegment
@@ -47,7 +47,7 @@ async def find_last_speech_position(socket_id, is_last_chunk):
             raise ValueError("audio_buffer не может быть пустым")
 
         if audio_buffer[socket_id].frame_rate != silero_bitrate:
-            audio_for_vad = await resample_audiosegment(audio_buffer[socket_id], silero_bitrate)
+            audio_for_vad = await async_resample_audiosegment(audio_buffer[socket_id], silero_bitrate)
         else:
             audio_for_vad = audio_buffer[socket_id]
 

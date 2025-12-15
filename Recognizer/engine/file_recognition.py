@@ -1,3 +1,4 @@
+import time
 
 from pydub import AudioSegment
 import config
@@ -13,7 +14,7 @@ from utils.pre_start_init import (
 )
 from utils.do_logging import logger
 from utils.chunk_doing import find_last_speech_position
-from utils.resamppling import resample_audiosegment
+from utils.resamppling import sync_resample_audiosegment
 from Recognizer.engine.stream_recognition import simple_recognise, recognise_w_speed_correction, simple_recognise_batch
 from Recognizer.engine.sentensizer import do_sensitizing
 from Recognizer.engine.echoe_clearing import remove_echo
@@ -24,6 +25,7 @@ from threading import Lock
 audio_lock = Lock()
 
 def process_file(tmp_path, params):
+    process_file_start = time.perf_counter()
     res = False
     diarized = False
     error_description = str()
@@ -65,13 +67,14 @@ def process_file(tmp_path, params):
         return result
 
     # Приводим фреймрейт к фреймрейту модели
+    print(f"Начало проверки фреймрейта {(time.perf_counter()-process_file_start):.4f} сек.")
     try:
         with audio_lock:
             if posted_and_downloaded_audio[post_id].frame_rate != config.BASE_SAMPLE_RATE:
-                posted_and_downloaded_audio[post_id] = asyncio.run(resample_audiosegment(
+                posted_and_downloaded_audio[post_id] = sync_resample_audiosegment(
                                                                         audio_data=posted_and_downloaded_audio[post_id],
                                                                         target_sample_rate=config.BASE_SAMPLE_RATE)
-                                                                    )
+                print(f"Корректировка фреймрейта {(time.perf_counter() - process_file_start):.4f} сек.")
     except KeyError as e_key:
         error_description = f"Ошибка обращения по ключу {post_id} при изменения фреймрейта - {e_key}"
         logger.error(error_description)
@@ -88,6 +91,7 @@ def process_file(tmp_path, params):
 
     # Обрабатываем чанки с аудио по N секунд
     for n_channel, mono_data in enumerate(posted_and_downloaded_audio[post_id].split_to_mono()):
+        time_chunks_start = time.perf_counter()
         # Подготовительные действия
         try:
             with audio_lock:

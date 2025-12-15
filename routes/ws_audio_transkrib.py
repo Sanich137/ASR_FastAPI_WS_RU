@@ -14,7 +14,7 @@ from utils.chunk_doing import find_last_speech_position
 from utils.pre_start_init import audio_buffer, audio_overlap, audio_to_asr, audio_duration,ws_collected_asr_res
 from utils.send_messages import send_messages
 from utils.tokens_to_Result import process_asr_json_deprecated, process_gigaam_asr
-from utils.resamppling import resample_audiosegment
+from utils.resamppling import async_resample_audiosegment
 
 from Recognizer.engine.sentensizer import do_sensitizing
 from Recognizer.engine.stream_recognition import recognise_w_calculate_confidence, simple_recognise
@@ -99,7 +99,7 @@ async def websocket(ws: WebSocket):
 
                 # Приводим фреймрейт к фреймрейту модели
                 if audiosegment_chunk.frame_rate != config.BASE_SAMPLE_RATE:
-                    audiosegment_chunk = await resample_audiosegment(audiosegment_chunk, config.BASE_SAMPLE_RATE)
+                    audiosegment_chunk = await async_resample_audiosegment(audiosegment_chunk, config.BASE_SAMPLE_RATE)
 
                 if audiosegment_chunk.channels != 1:
                     audiosegment_chunk = audiosegment_chunk.set_channels(1)

@@ -15,7 +15,7 @@ from umap import UMAP
 from hdbscan import HDBSCAN
 from utils.do_logging import logger
 from utils.pre_start_init import paths
-from utils.resamppling import resample_audiosegment
+from utils.resamppling import async_resample_audiosegment
 
 
 class Diarizer:
@@ -422,7 +422,7 @@ async def load_and_preprocess_audio(audio: AudioSegment, target_frame_size: int 
     start_time = time.perf_counter()
 
     if audio.frame_rate != sample_rate:
-        audio = await resample_audiosegment(audio,sample_rate)
+        audio = await async_resample_audiosegment(audio, sample_rate)
     if audio.channels > 1:
         audio = audio.split_to_mono()[1]  # [0:60000]
     samples = np.array(audio.get_array_of_samples(), dtype=np.int16)
