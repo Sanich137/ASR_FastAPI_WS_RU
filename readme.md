@@ -73,7 +73,7 @@ alphacep/vosk-model-small-ru
 nemo-fastconformer-ru-ctc / Своя пунктуация, пока выдаём лишние пробелы
 nemo-fastconformer-ru-rnnt / Своя пунктуация, пока выдаём лишние пробелы
 
-= запуск возможен, ошибки обработки вывода = (нет меток времени)
+= запуск возможен, ошибки обработки вывода = (нет меток времени, нет батчинга)
 onnx-community/whisper-tiny
 onnx-community/whisper-base
 onnx-community/whisper-small
@@ -81,7 +81,7 @@ onnx-community/whisper-large-v3-turbo ... и так далее для OpenAI Whi
 
 
 = пока не проверены и не поддерживааются = 
-nemo-parakeet-ctc-0.6b
+nemo-parakeet-ctc-0.6b - Английский?
 nemo-parakeet-rnnt-0.6b
 nemo-parakeet-tdt-0.6b-v2
 nemo-parakeet-tdt-0.6b-v3

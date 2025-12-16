@@ -46,37 +46,29 @@ class Recognizer:
         if "vosk" in self.model_name:
             if "TensorrtExecutionProvider" in self.preprocessor_providers:
                  self.preprocessor_providers.remove("TensorrtExecutionProvider")
-
             if "TensorrtExecutionProvider" in self.resampler_providers:
                  self.resampler_providers.remove("TensorrtExecutionProvider")
-
             self._post_processor = tokens_to_Result.process_multi_tokens_vocab_output
-
         elif "t-one" in self.model_name:
-
             if "TensorrtExecutionProvider" in self.resampler_providers:
                 self.resampler_providers.remove("TensorrtExecutionProvider")
-
             self._post_processor = tokens_to_Result.process_single_token_vocab_output
-
         elif "giga" in self.model_name:
-
             if "TensorrtExecutionProvider" in self.resampler_providers:
                 self.resampler_providers.remove("TensorrtExecutionProvider")
-
             self._post_processor = tokens_to_Result.process_single_token_vocab_output
-
         elif "whisper" in self.model_name:
             if "TensorrtExecutionProvider" in self.encoding_providers:
                 self.encoding_providers.remove("TensorrtExecutionProvider")
-
             self._post_processor = tokens_to_Result.process_multi_tokens_vocab_output
-
         elif "fastconformer" in self.model_name:
-
             if "TensorrtExecutionProvider" in self.encoding_providers:
                 self.encoding_providers.remove("TensorrtExecutionProvider")
             self._post_processor = tokens_to_Result.process_multi_tokens_vocab_output
+        elif "parakeet" in self.model_name:
+            if "TensorrtExecutionProvider" in self.resampler_providers:
+                self.resampler_providers.remove("TensorrtExecutionProvider")
+            self._post_processor = tokens_to_Result.process_single_token_vocab_output
 
         session_options = ort.SessionOptions()
         session_options.log_severity_level = 4  # Выключаем подробный лог
@@ -105,7 +97,7 @@ class Recognizer:
                                          sess_options=session_options,
                                          cpu_preprocessing=self.cpu_preprocessing,
                                          preprocessor_config=preprocessor_settings,
-                                         resampler_config=resampler_settings
+                                         resampler_config=resampler_settings,
                                          ).with_timestamps()
 
         try:
