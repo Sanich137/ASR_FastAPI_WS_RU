@@ -31,7 +31,7 @@ RUN test -f temp_models/VAD_silero_v5/silero_vad.onnx || (echo "File download fa
 
 
 # Устанавливаем основное приложени
-RUN  --mount=type=ssh git clone https://github.com/Sanich137/ASR_FastAPI_WS_RU_sherpa-onnx
+RUN  git clone https://github.com/Sanich137/ASR_FastAPI_WS_RU_sherpa-onnx
 
 
 # Переносим модели

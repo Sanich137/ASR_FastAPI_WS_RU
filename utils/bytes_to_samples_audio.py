@@ -1,5 +1,3 @@
-from turtledemo.penrose import start
-
 import numpy as np
 from  time import perf_counter
 import logging
