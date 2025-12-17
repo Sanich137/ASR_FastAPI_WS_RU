@@ -22,8 +22,10 @@ psutil~=7.0.0
 # For ASR
 onnxruntime-gpu[cuda,cudnn]== 1.23.2
 onnx-asr == 0.9.1
-tensorrt-cu12
 hf_xet
+
+-f https://pypi.nvidia.com/tensorrt-cu12-libs/
+tensorrt_cu12_libs==10.14.1.48.post1
 
 librosa~=0.11.0
 
