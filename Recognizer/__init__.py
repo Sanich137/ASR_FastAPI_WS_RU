@@ -5,10 +5,11 @@ from utils.do_logging import logger
 from utils import tokens_to_Result
 from . import engine
 import config
-try:
-    import tensorrt
-except Exception as e:
-    logger.error(f"Попытка импорта tensorrt завершилась ошибкой. {e}. Функционал TensorrtExecutionProvider может быть недоступен.")
+if config.PROVIDER == "TENSORRT":
+    try:
+        import tensorrt
+    except Exception as e:
+        logger.error(f"Попытка импорта tensorrt завершилась ошибкой. {e}. Функционал TensorrtExecutionProvider может быть недоступен.")
 import onnx_asr
 import onnxruntime as ort
 from onnx_asr.loader import PreprocessorRuntimeConfig, OnnxSessionOptions
