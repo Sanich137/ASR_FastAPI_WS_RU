@@ -24,7 +24,7 @@ onnxruntime-gpu[cuda,cudnn]== 1.23.2
 onnx-asr == 0.9.1
 hf_xet
 
-# tensorrt_cu12==10.14.1.48.post1
+tensorrt_cu12==10.14.1.48.post1
 
 librosa~=0.11.0
 
