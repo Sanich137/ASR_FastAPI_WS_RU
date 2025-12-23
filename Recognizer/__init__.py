@@ -5,13 +5,8 @@ from utils.do_logging import logger
 from utils import tokens_to_Result
 from . import engine
 import config
-if config.PROVIDER == "TENSORRT":
-    try:
-        import tensorrt
-    except Exception as e:
-        logger.error(f"Попытка импорта tensorrt завершилась ошибкой. {e}. Функционал TensorrtExecutionProvider может быть недоступен.")
-import onnx_asr
 import onnxruntime as ort
+import onnx_asr
 from onnx_asr.loader import PreprocessorRuntimeConfig, OnnxSessionOptions
 
 
@@ -31,13 +26,21 @@ class Recognizer:
         self.cpu_preprocessing = False
 
         match config.PROVIDER:
+
             case "TENSORRT":
                 self.preprocessor_providers = self.encoding_providers = self.resampler_providers = TENSORRT_providers
-                logger.info("Using TENSORRT provider")
-
+                ort.preload_dlls(cuda=True, cudnn=True, msvc=True, directory=None, )
+                try:
+                    import tensorrt
+                except Exception as e:
+                    logger.error(
+                        f"Ошибка импорта tensorrt. {e}. Функционал TensorrtExecutionProvider будет недоступен.")
+                    self.preprocessor_providers = self.encoding_providers = self.resampler_providers = CUDA_providers
+                logger.info(f"Using {self.preprocessor_providers[0]} provider")
             case "CUDA":
                 self.preprocessor_providers = self.encoding_providers = self.resampler_providers = CUDA_providers
-                logger.info("Using CUDA provider")
+                ort.preload_dlls(cuda=True, cudnn=True, msvc=True, directory=None, )
+                logger.info(f"Using {self.preprocessor_providers[0]} provider")
             case _ :
                 self.preprocessor_providers = self.encoding_providers = self.resampler_providers = CPU_providers
                 logger.info("Using CPU provider")

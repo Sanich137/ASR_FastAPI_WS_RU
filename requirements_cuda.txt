@@ -1,0 +1,5 @@
+# For ASR
+
+onnxruntime-gpu[cuda,cudnn]== 1.23.2
+# onnxruntime-gpu
+cupy-cuda12x==13.5.1  # Учитывайте используемую версию cuda.
