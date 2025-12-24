@@ -15,13 +15,16 @@
 - Скачиваем необходимый докер файл и помещаем его в любую папку.
 - - Переходим в папку и создаём образ, например для CUDA:
 ```bash
-docker build -t asr -f /mnt/e/Coding/Docker/Dockerfile /mnt/e/Coding/Docker --build-arg PROVIDER=CUDA --build-arg PROVIDER=CUDA    
+docker build -t asr -f /mnt/e/Coding/Docker/Dockerfile /mnt/e/Coding/Docker --build-arg PROVIDER=CUDA    
 ```
  
-- Запускаем образ c GPU:
-```commandline
-docker run --runtime=nvidia -it --rm -p 8888:49153 asr 
-           --runtime=nvidia --gpus all -p 8888:49153 -v f:\models\hub\:/ASR_FastAPI_WS_RU/models/hub/
+- Запускаем образ c GPU (модель можно выбрать из доступных):
+```bash
+docker run --runtime=nvidia --gpus all -it --rm -p 8888:49153 \ 
+            -v f:\models\hub\:/ASR_FastAPI_WS_RU/models/hub/ 
+            -e PROVIDER=CPU 
+            -e MODEL_NAME=gigaam-v3-rnnt
+            asr 
 
 
 ```
