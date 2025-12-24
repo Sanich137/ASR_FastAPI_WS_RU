@@ -1,21 +1,29 @@
 # Инструкция по установке и запуске контейнеров ASR.
-- Файл [Dockerfile_GigaAM_GPU](Dockerfile_GigaAM_GPU) создан для запуска на GPU Nvidia, а [Dockerfile_GigaAM_CPU](Dockerfile_GigaAM_CPU) для запуска только на CPU
-- В образе уже будет установлена модели GigaAMv2, SileroVAD и voxblink2_samresnet100_ft для диаризации.
-- Для замены voxblink2_samresnet100_ft на другую модель диаризации, при старте дополнительно передайте её название из списка основном readme.md 
+- Файл [Dockerfile](Dockerfile) создан для запуска как на GPU Nvidia, так и на CPU.
+- Выбор в основе докер лежит простой образ python:3.12-slim-bullseye, а поддержка CUDA обеспечивается onnxruntime-gpu cо встроенными библиотеками.
+- В образе уже будет установлены модели SileroVAD и voxblink2_samresnet100_ft для диаризации.
+- При первом запуске будет скачана модель для ASR. По умолчанию это gigaam-v3-ctc. 
+- Важно! Чтобы модель не перекачивалась при каждом запуске, присоедините каталог models/hub к локальному.
+- Для замены voxblink2_samresnet100_ft при старте передайте её название переменной окружения. Список в [read.me](readme.md)
+- Для замены модели ASR - передайте её название переменной окружения.  Список в [read.me](readme.md)
+- для выбора провайдера доступны CPU, CUDA, TENSORRT. Последний существенно увеличивает скорость, и объем контейнера.
 
 ## Настройка оборудования для работы CUDA. (Для контейнера _CPU пропускаем).
 - Установите [Nvidia container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html), чтобы драйвер видеокарты был доступен в контейнере. 
 
 ## Сборка и запуск контейнера.
 - Скачиваем необходимый докер файл и помещаем его в любую папку.
-- Переходим в папку и создаём образ, например:
+- - Переходим в папку и создаём образ, например для CUDA:
 ```bash
-docker build -t asr -f /mnt/e/Coding/Docker/Dockerfile_GigaAM_CPU /mnt/e/Coding/Docker
+docker build -t asr -f /mnt/e/Coding/Docker/Dockerfile /mnt/e/Coding/Docker --build-arg PROVIDER=CUDA --build-arg PROVIDER=CUDA    
 ```
  
 - Запускаем образ c GPU:
 ```commandline
-docker run --runtime=nvidia -it --rm -p 8888:49153 asr
+docker run --runtime=nvidia -it --rm -p 8888:49153 asr 
+           --runtime=nvidia --gpus all -p 8888:49153 -v f:\models\hub\:/ASR_FastAPI_WS_RU/models/hub/
+
+
 ```
 - Запускаем образ на CPU:
 ```commandline

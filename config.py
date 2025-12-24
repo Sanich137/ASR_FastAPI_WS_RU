@@ -49,7 +49,7 @@ PUNCTUATE_WITH_GPU = True if int(os.getenv('PUNCTUATE_WITH_GPU', 0)) == 1 else F
 # Diarisation_settings
 CAN_DIAR = True if int(os.getenv('CAN_DIAR', 0)) == 1 else False
 DIAR_MODEL_NAME = str(os.getenv('DIAR_MODEL_NAME', "voxblink2_samresnet100_ft")+".onnx")
-DIAR_WITH_GPU = True if int(os.getenv('DIAR_WITH_GPU', 0)) == 1 else False
+DIAR_WITH_GPU = True if (int(os.getenv('DIAR_WITH_GPU', 0)) == 1  and PROVIDER in ["CUDA", "TENSORRT"]) else False
 CPU_WORKERS = int(os.getenv('CPU_WORKERS', 0)) # Для значений меньше 1 будут использованы все доступные ядра.
 # При значении от 1 - указанное число ядер CPU. Работает только при DIAR_WITH_GPU False
 DIAR_GPU_BATCH_SIZE = int(os.getenv('DIAR_GPU_BATCH_SIZE', 2))  # Ширина Батча для процесса извлечения эмбеддингов с GPU.

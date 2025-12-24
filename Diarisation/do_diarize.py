@@ -438,6 +438,8 @@ async def load_and_preprocess_audio(audio: AudioSegment, target_frame_size: int 
 
 
 if __name__ == "__main__":
+    # Тестирование
+
     from VoiceActivityDetector import vad
 
     # Параметры диаризации и кластеризации

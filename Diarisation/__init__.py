@@ -63,7 +63,8 @@ if config.CAN_DIAR:
                             max_phrase_gap=1,
                             batch_size=config.DIAR_GPU_BATCH_SIZE,
                             cpu_workers=config.CPU_WORKERS,
-                            use_gpu=config.DIAR_WITH_GPU)
+                            use_gpu=config.DIAR_WITH_GPU
+                            )
 
         logger.info(f"Успешно загружена модель Диаризации")
 else:
