@@ -31,7 +31,7 @@ class Recognizer:
                 self.preprocessor_providers = self.encoding_providers = self.resampler_providers = TENSORRT_providers
                 ort.preload_dlls(cuda=True, cudnn=True, msvc=True, directory=None, )
                 try:
-                    import tensorrt
+                    import tensorrt_libs
                 except Exception as e:
                     logger.error(
                         f"Ошибка импорта tensorrt. {e}. Функционал TensorrtExecutionProvider будет недоступен.")
@@ -99,7 +99,6 @@ class Recognizer:
         self._recognizer = onnx_asr.load_model(model=self.model_name,
                                          providers=self.encoding_providers,
                                          sess_options=session_options,
-                                         cpu_preprocessing=self.cpu_preprocessing,
                                          preprocessor_config=preprocessor_settings,
                                          resampler_config=resampler_settings,
                                          ).with_timestamps()

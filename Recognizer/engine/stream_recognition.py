@@ -126,7 +126,7 @@ def simple_recognise_batch(list_audio_data: list, batch_size: int = 8) -> list:
         encoded_batch = recognizer.asr._encode(waveform, waveform_len)
 
         # Сразу же декодируем результат для этого батча
-        decoded_batch = list(recognizer.asr._decoding(*encoded_batch, None))
+        decoded_batch = list(recognizer.asr._decoding(*encoded_batch))
         result_batch = (recognizer.asr._decode_tokens(*tup_decoded) for tup_decoded in decoded_batch)
 
         # Добавляем финальный результат для батча в общий список

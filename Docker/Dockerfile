@@ -82,7 +82,7 @@ RUN if [ "$PROVIDER" = "TENSORRT" ]; then \
         sed -i 's#^onnxruntime\s*$#onnxruntime-gpu[cuda, cudnn]== 1.23.2#' /tmp/app_setup/requirements.txt; \
         # Добавляем cupy и TensorRT-специфичные пакеты \
         echo "cupy-cuda12x==13.5.1" >> /tmp/app_setup/requirements.txt; \
-        echo "tensorrt_cu12" >> /tmp/app_setup/requirements.txt; \
+        echo "tensorrt_libs" >> /tmp/app_setup/requirements.txt; \
     elif [ "$PROVIDER" = "CUDA" ]; then \
         echo "Configuring for CUDA..."; \
         # Заменяем CPU-версию onnxruntime на GPU-версию \
