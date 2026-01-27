@@ -45,6 +45,6 @@ aiofiles~=24.1.0
 watchdog~=6.0.0
 
 # For ASR
-onnx-asr == 0.9.1
+onnx-asr == 0.10.2
 hf_xet
 onnxruntime

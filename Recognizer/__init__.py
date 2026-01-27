@@ -109,7 +109,7 @@ class Recognizer:
         except Exception as e:
             logger.error("Ошибка при прогреве модели. Сервис работать не будет. Возможно, модель не поддерживает выбранный провайдер.")
         else:
-            logger.info(f"Успешно загружена ASR модель {self.model_name}.")
+            logger.info(f"Успешно загружена ASR модель {self.model_name}. ")
 
     def __getattr__(self, name):
 
