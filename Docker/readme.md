@@ -25,9 +25,14 @@ docker run --runtime=nvidia --gpus all -it --rm -p 8888:49153 \
             -e PROVIDER=CPU 
             -e MODEL_NAME=gigaam-v3-rnnt
             asr 
-
-
 ```
+или в фоне и без логов в консоль
+
+```bash
+docker run -d  --name asr --runtime=nvidia --gpus all --restart=unless-stopped -p 49153:49153 -v /opt/ASR_docker/logs/:/ASR_FastAPI_WS_RU/logs/ -v /opt/ASR_docker/models/hub/:/ASR_FastAPI_WS_RU/models/hub/ -e PROVIDER=CUDA -e MODEL_NAME=gigaam-v3-rnnt -e VAD_WITH_GPU=0 -e BETWEEN_WORDS_PERCENTILE=82 -e PUNCTUATE_WITH_GPU=1 -e IS_PROD=1 asr
+```
+ 
+ 
 - Запускаем образ на CPU:
 ```commandline
 docker run -it --rm -p 8888:49153 asr

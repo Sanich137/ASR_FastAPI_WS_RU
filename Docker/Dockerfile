@@ -1,6 +1,9 @@
 # Базовый образ без CUDA и cuDNN
 FROM python:3.12-slim-bullseye
 
+# Источник пакетов для дебиан
+RUN sed -i 's/deb.debian.org/mirror.yandex.ru/g' /etc/apt/sources.list
+
 # Установка зависимостей
 RUN apt-get update && apt-get install -y \
     git \
@@ -102,6 +105,9 @@ RUN if [ "$PROVIDER" = "TENSORRT" ]; then \
 
 # Устанавливаем зависимости без кэша
 RUN pip  install --no-cache-dir -r /tmp/app_setup/requirements.txt
+
+# Принудительная переустановка нужной версии cuDNN поверх установленной для карт на pascal (GTX 1080)
+# RUN pip install --force-reinstall nvidia-cudnn-cu12==9.6.0.74
 
 # Устанавливаем основное приложени
 RUN echo " Forcing cache invalidation at $(date)" && git clone https://github.com/Sanich137/ASR_FastAPI_WS_RU
