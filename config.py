@@ -21,7 +21,9 @@ class Settings(BaseSettings):
     PORT: int = 49153
 
     # Model settings
+    # Vosk5SmallStreaming  Vosk5 Gigaam Whisper Gigaam_rnnt, "gigaam-v3-rnnt", "gigaam-v3-ctc"
     MODEL_NAME: str = "gigaam-v3-ctc"
+    # Стрим из астериска отдаёт только 8к
     BASE_SAMPLE_RATE: int = 16000
     PROVIDER: str = "CUDA"
     NUM_THREADS: int = 0
@@ -34,22 +36,35 @@ class Settings(BaseSettings):
     LOGGING_FORMAT: str = '#%(levelname)-8s %(filename)s [LINE:%(lineno)d] [%(asctime)s]  %(message)s'
     FILENAME: str = Field(default_factory=lambda: f'logs/ASR-{date.today()}.log')
     FILEMODE: str = 'a'
+    # Срок хранения логов в днях
     LOG_BACKUP_COUNT: int = 180
     IS_PROD: bool = True
 
     # Recognition settings
+    # Максимальная продолжительность буфера аудио (зависит от модели) приемлемый диапазон 10-15 сек.
+    # Для Vosk, для Гига СТС можно больше.
     MAX_OVERLAP_DURATION: int = 30
+    # Пока не менять
     RECOGNITION_ATTEMPTS: int = 1
+    # Нормальное количество токенов в секунду. При превышении этого значения становится
+    # возможным автоматически замедлять скорость речи для улучшения распознавания. В реальной речи, как правило, находится
+    # в интервале от 13 до 25.
     SPEECH_PER_SEC_NORM_RATE: int = 18
     MAKE_MONO: bool = False
     USE_BATCH: bool = True
+    # Размер батча для распознавания аудио.
     ASR_BATCH_SIZE: int = 8
 
-    # VAD settings
+    # Vad settings
+    # 1 to 5 Higher - more words.
     VAD_SENSITIVITY: int = 3
     VAD_WITH_GPU: bool = False
 
     # Sentensize settings
+    # Параметр определяет как мелко будет биться текст на предложения. Чем меньше значение,
+    # тем более короткие будут предложения. В среднем в одном предложении 10 слов.
+    # То есть, по длительности каждая десятая пауза означает конец предложения или мысли.
+    # Влияет на пунктуацию выражений.
     BETWEEN_WORDS_PERCENTILE: int = 80
 
     # Punctuate settings
@@ -58,16 +73,29 @@ class Settings(BaseSettings):
 
     # Diarisation settings
     CAN_DIAR: bool = False
+    # Разных моделей для диаризации много.
+    # [('cnceleb_resnet34', 25), ('cnceleb_resnet34_LM', 25), ('voxblink2_samresnet100', 191), ('voxblink2_samresnet100_ft', 191),
+    # ('voxblink2_samresnet34', 96), ('voxblink2_samresnet34_ft', 96), ('voxceleb_CAM++', 27), ('voxceleb_CAM++_LM', 27),
+    # ('voxceleb_ECAPA1024', 56), ('voxceleb_ECAPA1024_LM', 56), ('voxceleb_ECAPA512', 23), ('voxceleb_ECAPA512_LM', 23),
+    # ('voxceleb_gemini_dfresnet114_LM', 24), ('voxceleb_resnet152_LM', 75), ('voxceleb_resnet221_LM', 90),
+    # ('voxceleb_resnet293_LM', 109), ('voxceleb_resnet34', 25), ('voxceleb_resnet34_LM', 25)]
     DIAR_MODEL_NAME: str = "voxblink2_samresnet100_ft"
     DIAR_WITH_GPU: bool = False
+    # Для значений меньше 1 будут использованы все доступные ядра.
+    # При значении от 1 - указанное число ядер CPU. Работает только при DIAR_WITH_GPU False
     CPU_WORKERS: int = 0
+    # Ширина Батча для процесса извлечения эмбеддингов с GPU.
+    # Оптимально от 4 до 16. Дальнейшее увеличение приводит к неоправданному расходу памяти.
     DIAR_GPU_BATCH_SIZE: int = 2
 
     # Speed speech correction
+    # Инструменты управления распознаванием быстрой речи. Включено
     DO_SPEED_SPEECH_CORRECTION: bool = True
+    # 1 - обычная скорость, меньше - медленнее, больше - быстрее
     SPEED_SPEECH_CORRECTION_MULTIPLIER: float = 1.0
 
     # Local file recognition
+    # Настройки сервиса локального распознавания.
     DO_LOCAL_FILE_RECOGNITIONS: bool = False
     DELETE_LOCAL_FILE_AFTR_ASR: bool = False
     HUMAN_FORMAT_MD_FILE: bool = False
@@ -107,10 +135,9 @@ class Settings(BaseSettings):
         if self.VAD_WITH_GPU and self.PROVIDER not in ["CUDA", "TENSORRT"]:
             self.VAD_WITH_GPU = False
 
-        # DIAR_WITH_GPU актуален только при GPU-провайдерах
+        # PUNCTUATE_WITH_GPU актуален только при GPU-провайдерах
         if self.PUNCTUATE_WITH_GPU and self.PROVIDER not in ["CUDA", "TENSORRT"]:
             self.PUNCTUATE_WITH_GPU = False
-
 
         return self
 
