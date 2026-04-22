@@ -4,11 +4,8 @@ import ujson
 import config
 import uuid
 from io import BytesIO
-import subprocess
 
-
-from utils.pre_start_init import app
-from fastapi import WebSocket, WebSocketException
+from fastapi import APIRouter, WebSocket
 from utils.do_logging import logger
 from utils.chunk_doing import find_last_speech_position
 from utils.pre_start_init import audio_buffer, audio_overlap, audio_to_asr, audio_duration,ws_collected_asr_res
@@ -20,7 +17,9 @@ from Recognizer.engine.sentensizer import do_sensitizing
 from Recognizer.engine.stream_recognition import simple_recognise
 
 
-@app.websocket("/ws")
+router = APIRouter()
+
+@router.websocket("/ws")
 async def websocket(ws: WebSocket):
     wait_null_answers=True
     client_id = uuid.uuid4()

@@ -2,12 +2,14 @@ from io import BytesIO
 import asyncio
 
 import config
-from utils.pre_start_init import app
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from utils.do_logging import logger
 from models.fast_api_models import PostFileRequest
 from Recognizer.engine.file_recognition import process_file
-from fastapi import Depends, File, Form, UploadFile
 from threading import Lock
+
+
+router = APIRouter()
 
 
 # Глобальный лок для потокобезопасности
@@ -42,7 +44,7 @@ def get_file_request(
     )
 
 
-@app.post("/post_file")
+@router.post("/post_file")
 async def async_receive_file(
     file: UploadFile = File(description="Аудиофайл для обработки"),
     params: PostFileRequest = Depends(get_file_request),

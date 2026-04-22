@@ -17,14 +17,14 @@
 Цель: устранить side-effects при импорте, валидировать окружение и централизовать
 создание приложения.
 
-ЗАДАЧА 1.1 — config.py
+ЗАДАЧА 1.1 — config.py [ВЫПОЛНЕНО]
   - Миграция с голого os.getenv() на pydantic-settings (BaseSettings).
   - Все переменные получают типизацию, значения по умолчанию и валидацию.
   - Старые имена экспортируются для обратной совместимости с неизменяемыми
     модулями ASR (Recognizer, Diarisation и т.д.).
   - Добавить SettingsConfigDict с поддержкой .env файла.
 
-ЗАДАЧА 1.2 — utils/pre_start_init.py
+ЗАДАЧА 1.2 — utils/pre_start_init.py [ВЫПОЛНЕНО]
   - Удалить глобальный объект app = FastAPI(...).
   - Оставить только инициализацию paths, глобальных defaultdict
     (audio_overlap, audio_buffer, audio_to_asr, audio_duration,
@@ -33,7 +33,7 @@
   - Убрать любие импорты роутов или HTTP-объектов.
   - Файл должен быть безопасен для импорта без побочных эффектов.
 
-ЗАДАЧА 1.3 — main.py
+ЗАДАЧА 1.3 — main.py [ВЫПОЛНЕНО]
   - Создание app = FastAPI(...) переносится сюда как явная фабрика.
   - Подключение lifespan из utils.pre_start_init.
   - Добавление CORS-middleware (CORSMiddleware).

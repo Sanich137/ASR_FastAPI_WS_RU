@@ -1,10 +1,12 @@
-from utils.pre_start_init import app
+from fastapi import APIRouter
 import logging
 import datetime
 import os
 import pynvml
 from utils.pre_start_init import audio_to_asr
 
+
+router = APIRouter()
 
 def get_gpu_free_memory():
     try:
@@ -22,7 +24,7 @@ def get_gpu_free_memory():
     return free_mb, gpu_load,temperature
 
 
-@app.get("/is_alive")
+@router.get("/is_alive")
 async def check_if_service_is_alive():
 
     logging.info('GET_is_alive')

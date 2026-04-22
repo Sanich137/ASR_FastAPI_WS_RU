@@ -1,10 +1,68 @@
 from utils.do_logging import logger
 import uvicorn
 import config
-from utils.pre_start_init import app
-import routes, models
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.openapi.utils import get_openapi
+from utils.files_whatcher import start_file_watcher
+from utils.pre_start_init import paths
+import threading
 
+from routes.root import router as root_router
+from routes.is_alive import router as is_alive_router
+from routes.post_ws import router as post_ws_router
+from routes.post_by_file_FORM import router as post_by_file_router
+from routes.post_by_url import router as post_by_url_router
+from routes.ws_audio_transkrib import router as ws_audio_transkrib_router
+from routes.demo_page import router as demo_router
+import models
+
+
+@asynccontextmanager
+async def lifespan(app):
+    # on_start
+    logger.debug("Приложение FastAPI запущено")
+    if config.DO_LOCAL_FILE_RECOGNITIONS:
+        observer_thread = threading.Thread(
+            target=lambda: start_file_watcher(file_path=str(paths.get("local_recognition_folder"))),
+            daemon=True
+        )
+        observer_thread.start()
+        logger.info("File watcher started")
+
+    yield  # Здесь приложение работает
+
+
+app = FastAPI(
+    lifespan=lifespan,
+    version="1.0",
+    docs_url='/docs',
+    root_path='/root',
+    title='ASR on SHERPA-ONNX'
+)
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Static files
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Routers
+app.include_router(root_router)
+app.include_router(is_alive_router)
+app.include_router(post_ws_router)
+app.include_router(post_by_file_router)
+app.include_router(post_by_url_router)
+app.include_router(ws_audio_transkrib_router)
+app.include_router(demo_router)
 
 def custom_openapi():
     openapi_schema = get_openapi(

@@ -1,11 +1,6 @@
 # -*- coding: utf-8 -*-
-from utils.do_logging import logger
-from utils.files_whatcher import start_file_watcher
-from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI
 import config
-import threading
 import gc
 
 
@@ -63,26 +58,3 @@ posted_and_downloaded_audio = defaultdict()
 gc.set_threshold(500,  # быстрые файлы было 700
                  5,    # средне выживающие файлы было 10
                  5)    # долгожители было 10.
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # on_start
-    logger.debug("Приложение FastAPI запущено")
-    global observer
-    if config.DO_LOCAL_FILE_RECOGNITIONS:
-        observer_thread = threading.Thread(
-            target=lambda: start_file_watcher(file_path=str(paths.get("local_recognition_folder"))),
-            daemon=True
-        )
-        observer_thread.start()
-        logger.info("File watcher started")
-
-    yield  # Здесь приложение работает
-
-app = FastAPI(lifespan=lifespan,
-              version="1.0",
-              docs_url='/docs',
-              root_path='/root',
-              title='ASR on SHERPA-ONNX'
-              )

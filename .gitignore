@@ -17,3 +17,6 @@
 /models/sherpa-onnx-whisper-small/
 /trash/test_data.py
 /.idea/
+.aider*
+/.continue/
+.env

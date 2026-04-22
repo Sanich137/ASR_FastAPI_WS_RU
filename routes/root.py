@@ -1,7 +1,9 @@
-from utils.pre_start_init import app
+from fastapi import APIRouter
 import config
 
-@app.get("/")
+router = APIRouter()
+
+@router.get("/")
 async def root():
     print("Зашли в root")
 
