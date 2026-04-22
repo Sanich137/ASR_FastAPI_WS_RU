@@ -1,8 +1,51 @@
-from pydantic import BaseModel, HttpUrl, Field
-from typing import Union, Annotated
+from pydantic import BaseModel, HttpUrl, Field, ConfigDict
+from typing import Union, Annotated, Optional, Any, List, Dict
 from fastapi import UploadFile
 
 import config
+
+
+class BaseResponse(BaseModel):
+    """
+    Базовая модель ответа API.
+    """
+    success: bool = True
+    error_description: Optional[str] = None
+    data: Optional[Dict[str, Any]] = None
+
+
+class ErrorResponse(BaseModel):
+    """
+    Модель ошибки API.
+    """
+    success: bool = False
+    error_description: str
+    data: Optional[Dict[str, Any]] = None
+
+
+class UserBase(BaseModel):
+    """
+    Базовая информация о пользователе (заготовка для JWT).
+    """
+    username: Optional[str] = None
+    email: Optional[str] = None
+    is_active: bool = True
+
+
+class Token(BaseModel):
+    """
+    Модель токена доступа.
+    """
+    access_token: str
+    token_type: str = "bearer"
+
+
+class TokenPayload(BaseModel):
+    """
+    Полезная нагрузка JWT-токена.
+    """
+    sub: Optional[str] = None
+    exp: Optional[int] = None
 
 
 class SyncASRRequest(BaseModel):
@@ -27,7 +70,24 @@ class SyncASRRequest(BaseModel):
     use_batch: Union[bool, None] = config.USE_BATCH
     batch_size: Union[int, None] = config.ASR_BATCH_SIZE
 
-
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "AudioFileUrl": "https://example.com/audio.wav",
+                "keep_raw": True,
+                "do_echo_clearing": True,
+                "do_dialogue": False,
+                "do_punctuation": False,
+                "do_diarization": False,
+                "make_mono": False,
+                "diar_vad_sensity": 3,
+                "do_auto_speech_speed_correction": True,
+                "speech_speed_correction_multiplier": 1.0,
+                "use_batch": True,
+                "batch_size": 8
+            }
+        }
+    )
 
 
 class PostFileRequest(BaseModel):
@@ -52,75 +112,102 @@ class PostFileRequest(BaseModel):
     speech_speed_correction_multiplier: Union[float, None] = config.SPEED_SPEECH_CORRECTION_MULTIPLIER
     make_mono: Union[bool, None] = False
 
-class PostFileRequestDiarize(BaseModel):
-    """
-    Модель для проверки запроса пользователя.
-    :param keep_raw: Если False, то запрос вернёт только пост-обработанные данные do_punctuation и do_dialogue.
-    :param do_echo_clearing: Проверяет наличие повторений между каналами.
-    :param num_speakers: Предполагаемое количество спикеров в разговоре. -1 - значит мы не знаем сколько спикеров и определяем их параметром cluster_threshold.
-    :param cluster_threshold: Значение от 0 до 1. Чем меньше, тем более чувствительное выделение спикеров (тем их больше)
-    :param do_punctuation: Расставляет пунктуацию.
-    """
-    keep_raw: bool = True
-    do_echo_clearing: bool = False
-    do_punctuation: bool = False
-    num_speakers: int = -1,
-    cluster_threshold: float = 0.2
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "keep_raw": True,
+                "do_echo_clearing": False,
+                "do_dialogue": False,
+                "do_punctuation": False,
+                "do_diarization": False,
+                "use_batch": True,
+                "batch_size": 8,
+                "diar_vad_sensity": 3,
+                "do_auto_speech_speed_correction": True,
+                "speech_speed_correction_multiplier": 1.0,
+                "make_mono": False
+            }
+        }
+    )
 
 class WebSocketModel(BaseModel):
     """OpenAPI не хочет описывать WS, а я не хочу изучать OPEN API. По этому описание тут.
-    \n
-    \n Подключение на порт: 49153
-    \n На вход жду поток binary, buffer_size +- 6400, mono, wav.
-    \n На вход я должен получить словарь {'text': { "config" : { "sample_rate" : any(int/float), "wait_null_answers": Bool,
-    "do_dialogue": Bool, "do_punctuation": Bool}}}
-    \n do_punctuation отработает только если do_dialogue = True
-    \n Далее сообщения с данными {"bytes": binary}
-    \n По окончании передачи {'text': '{ "eof" : 1}'}
-    \n Ответ получать в формате:     {"silence": Bool,"data": str, "error": None/str, "last_message": Bool,
-  "sentenced_data": {}}
 
+    Подключение на порт: 49153
+    На вход жду поток binary, buffer_size +- 6400, mono, wav.
 
-    \n Пример ответа "data": {
-  "result" : [{
-      "conf" : 1.000000,
-      "end" : 3.120000,
-      "start" : 2.340000,
-      "word" : "здравствуйте"
-    }, {
-      "conf" : 1.000000,
-      "end" : 3.870000,
-      "start" : 3.600000,
-      "word" : "вы"
-    },
-     ...
-     {
-      "conf" : 0.994019,
-      "end" : 11.790000,
-      "start" : 10.890000,
-      "word" : "записываются"
-    }],
-  "text" : "здравствуйте вы ... записываются"
-}
+    Протокол обмена сообщениями:
+      1. Начальное сообщение (конфигурация):
+         {'text': { "config" : { "sample_rate" : any(int/float), "wait_null_answers": Bool,
+         "do_dialogue": Bool, "do_punctuation": Bool}}}
+         do_punctuation отработает только если do_dialogue = True
 
-Пример ответа "sentenced_data": {
-    "raw_text_sentenced_recognition": "channel_1: Татьяна, добрый день. Меня зовут Ульяна.\nchannel_1: Звоню уточнить по поводу документов.\n",
-    "list_of_sentenced_recognitions": [
-      {
-        "start": 2.28,
-        "text": "Татьяна, добрый день. Меня зовут Ульяна.",
-        "speaker": "channel_1"
-      },
-      {
-        "start": 8.24,
-        "text": "Звоню уточнить по поводу документов.",
-        "speaker": "channel_1"
-      },
-    ],
-    "full_text_only": [
-      "Татьяна, добрый день. Меня зовут Ульяна. Звоню уточнить по поводу документов."
-    ],
-    "err_state": null
-  }
+      2. Последующие сообщения с аудио-данными:
+         {"bytes": binary}
+
+      3. Последнее сообщение (сигнал окончания передачи):
+         {'text': '{ "eof" : 1}'}
+
+    Формат ответа от сервера:
+      {"silence": Bool, "data": str, "error": None/str, "last_message": Bool,
+       "sentenced_data": {}}
+
+    Пример ответа "data": {
+      "result" : [{
+          "conf" : 1.000000,
+          "end" : 3.120000,
+          "start" : 2.340000,
+          "word" : "здравствуйте"
+        }, {
+          "conf" : 1.000000,
+          "end" : 3.870000,
+          "start" : 3.600000,
+          "word" : "вы"
+        },
+         ...
+         {
+          "conf" : 0.994019,
+          "end" : 11.790000,
+          "start" : 10.890000,
+          "word" : "записываются"
+        }],
+      "text" : "здравствуйте вы ... записываются"
+    }
+
+    Пример ответа "sentenced_data": {
+        "raw_text_sentenced_recognition": "channel_1: Татьяна, добрый день. Меня зовут Ульяна.'/n'channel_1: Звоню уточнить по поводу документов.",
+        "list_of_sentenced_recognitions": [
+          {
+            "start": 2.28,
+            "text": "Татьяна, добрый день. Меня зовут Ульяна.",
+            "speaker": "channel_1"
+          },
+          {
+            "start": 8.24,
+            "text": "Звоню уточнить по поводу документов.",
+            "speaker": "channel_1"
+          },
+        ],
+        "full_text_only": [
+          "Татьяна, добрый день. Меня зовут Ульяна. Звоню уточнить по поводу документов."
+        ],
+        "err_state": null
+      }
     """
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "text": {
+                    "config": {
+                        "sample_rate": 8000,
+                        "wait_null_answers": False,
+                        "do_dialogue": True,
+                        "do_punctuation": True
+                    }
+                }
+            }
+        }
+    )
+
     pass
