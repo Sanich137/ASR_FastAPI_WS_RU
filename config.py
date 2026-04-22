@@ -103,6 +103,15 @@ class Settings(BaseSettings):
         if self.DIAR_WITH_GPU and self.PROVIDER not in ["CUDA", "TENSORRT"]:
             self.DIAR_WITH_GPU = False
 
+        # VAD_WITH_GPU актуален только при GPU-провайдерах
+        if self.VAD_WITH_GPU and self.PROVIDER not in ["CUDA", "TENSORRT"]:
+            self.VAD_WITH_GPU = False
+
+        # DIAR_WITH_GPU актуален только при GPU-провайдерах
+        if self.PUNCTUATE_WITH_GPU and self.PROVIDER not in ["CUDA", "TENSORRT"]:
+            self.PUNCTUATE_WITH_GPU = False
+
+
         return self
 
 
