@@ -1,7 +1,7 @@
 import time
 
 from pydub import AudioSegment
-import config
+from config import settings
 import asyncio
 import uuid
 from utils.pre_start_init import (
@@ -58,7 +58,7 @@ def process_file(tmp_path, params):
         with audio_lock:
             if posted_and_downloaded_audio[post_id].duration_seconds < 5:
                 logger.debug(f"На вход передано аудио короче 5 секунд. Будет дополнено тишиной ещё 5 сек.")
-                posted_and_downloaded_audio[post_id] += AudioSegment.silent(duration=5, frame_rate=config.BASE_SAMPLE_RATE)
+                posted_and_downloaded_audio[post_id] += AudioSegment.silent(duration=5, frame_rate=settings.BASE_SAMPLE_RATE)
     except Exception as e:
         error_description += f"Error len_fixing_file: {e}"
         logger.error(error_description)
@@ -70,10 +70,10 @@ def process_file(tmp_path, params):
     print(f"Начало проверки фреймрейта {(time.perf_counter()-process_file_start):.4f} сек.")
     try:
         with audio_lock:
-            if posted_and_downloaded_audio[post_id].frame_rate != config.BASE_SAMPLE_RATE:
+            if posted_and_downloaded_audio[post_id].frame_rate != settings.BASE_SAMPLE_RATE:
                 posted_and_downloaded_audio[post_id] = sync_resample_audiosegment(
                                                                         audio_data=posted_and_downloaded_audio[post_id],
-                                                                        target_sample_rate=config.BASE_SAMPLE_RATE)
+                                                                        target_sample_rate=settings.BASE_SAMPLE_RATE)
                 print(f"Корректировка фреймрейта {(time.perf_counter() - process_file_start):.4f} сек.")
     except KeyError as e_key:
         error_description = f"Ошибка обращения по ключу {post_id} при изменения фреймрейта - {e_key}"
@@ -95,8 +95,8 @@ def process_file(tmp_path, params):
         # Подготовительные действия
         try:
             with audio_lock:
-                audio_buffer[post_id] = AudioSegment.silent(1, frame_rate=config.BASE_SAMPLE_RATE)
-                audio_overlap[post_id] = AudioSegment.silent(1, frame_rate=config.BASE_SAMPLE_RATE)
+                audio_buffer[post_id] = AudioSegment.silent(1, frame_rate=settings.BASE_SAMPLE_RATE)
+                audio_overlap[post_id] = AudioSegment.silent(1, frame_rate=settings.BASE_SAMPLE_RATE)
                 audio_duration[post_id] = 0
         except Exception as e:
                 error_description = f"Ошибка изменения фреймрейта - {e}"
@@ -108,15 +108,15 @@ def process_file(tmp_path, params):
         result["raw_data"].update({f"channel_{n_channel + 1}": list()})
 
         # Основной процесс перебора чанков для распознавания
-        overlaps = list(mono_data[::config.MAX_OVERLAP_DURATION * 1000])  # Чанки аудио для распознавания
+        overlaps = list(mono_data[::settings.MAX_OVERLAP_DURATION * 1000])  # Чанки аудио для распознавания
         total_chunks = len(overlaps)  # Количество чанков, для поиска последнего
         audio_to_asr[post_id] = list()
         for idx, overlap in enumerate(overlaps):
             is_last_chunk = (idx == total_chunks - 1) # Если чанк последний
             with audio_lock:
-                if (audio_overlap[post_id].duration_seconds + overlap.duration_seconds) < config.MAX_OVERLAP_DURATION:
-                    silent_secs = config.MAX_OVERLAP_DURATION - (audio_overlap[post_id].duration_seconds + overlap.duration_seconds)
-                    overlap += AudioSegment.silent(silent_secs, frame_rate=config.BASE_SAMPLE_RATE)
+                if (audio_overlap[post_id].duration_seconds + overlap.duration_seconds) < settings.MAX_OVERLAP_DURATION:
+                    silent_secs = settings.MAX_OVERLAP_DURATION - (audio_overlap[post_id].duration_seconds + overlap.duration_seconds)
+                    overlap += AudioSegment.silent(silent_secs, frame_rate=settings.BASE_SAMPLE_RATE)
                 audio_buffer[post_id] = overlap
                 asyncio.run(find_last_speech_position(post_id, is_last_chunk)) # Последний чанк обрабатывается иначе.
 
@@ -183,7 +183,7 @@ def process_file(tmp_path, params):
             error_description = f"Error echo clearing - {e}"
             res = False
 
-    if params.do_diarization and not config.CAN_DIAR:
+    if params.do_diarization and not settings.CAN_DIAR:
         error_description += "Diarization is not available.\n"
         logger.error("Запрошена диаризация, но она не доступна.")
         params.do_diarization = False

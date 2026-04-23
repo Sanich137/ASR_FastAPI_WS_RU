@@ -1,4 +1,4 @@
-import config
+from config import settings
 from utils.pre_start_init import paths
 from utils.do_logging import logger
 import requests
@@ -30,7 +30,7 @@ if not paths.get("vad_model_path").exists():
     raise FileExistsError
 else:
     from .do_vad import SileroVAD
-    vad=SileroVAD(paths.get("vad_model_path"), use_gpu= config.VAD_WITH_GPU)
+    vad=SileroVAD(paths.get("vad_model_path"), use_gpu= settings.VAD_WITH_GPU)
     # Нужно наблюдать за результатом работы в многопотоке (если он будет)
     # Если будут сбои, то переводить создание класса в отдельный процесс.
-    vad.set_mode(config.VAD_SENSITIVITY)
+    vad.set_mode(settings.VAD_SENSITIVITY)

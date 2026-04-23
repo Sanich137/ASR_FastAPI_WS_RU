@@ -4,7 +4,7 @@ import numpy as np
 from utils.do_logging import logger
 from utils import tokens_to_Result
 from . import engine
-import config
+from config import settings
 import onnxruntime as ort
 import onnx_asr
 from onnx_asr.loader import PreprocessorRuntimeConfig, OnnxSessionOptions
@@ -18,14 +18,14 @@ CPU_providers = ["CPUExecutionProvider"]
 
 class Recognizer:
     def __init__(self):
-        self.model_name = config.MODEL_NAME
+        self.model_name = settings.MODEL_NAME
         self._post_processor = tokens_to_Result.process_single_token_vocab_output
         self.preprocessor_providers = list()
         self.encoding_providers = list()
         self.resampler_providers = list()
         self.cpu_preprocessing = False
 
-        match config.PROVIDER:
+        match settings.PROVIDER:
 
             case "TENSORRT":
                 self.preprocessor_providers = self.encoding_providers = self.resampler_providers = TENSORRT_providers
@@ -104,7 +104,7 @@ class Recognizer:
                                          ).with_timestamps()
 
         try:
-            audio = np.random.randn(int(config.MAX_OVERLAP_DURATION * config.BASE_SAMPLE_RATE)).astype(np.float32)
+            audio = np.random.randn(int(settings.MAX_OVERLAP_DURATION * settings.BASE_SAMPLE_RATE)).astype(np.float32)
             self._recognizer.recognize([audio])
         except Exception as e:
             logger.error("Ошибка при прогреве модели. Сервис работать не будет. Возможно, модель не поддерживает выбранный провайдер.")

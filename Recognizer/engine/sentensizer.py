@@ -1,7 +1,7 @@
 from utils.do_logging import logger
 import numpy as np
 import asyncio
-import config
+from config import settings
 from Punctuation import sbertpunc
 
 async def do_sensitizing(input_asr_json: str, do_punctuation: bool = False):
@@ -81,7 +81,7 @@ async def do_sensitizing(input_asr_json: str, do_punctuation: bool = False):
                         between_words_delta.append(word.get('end') - end_time)
                         end_time = word.get('end')
 
-                    words_mean = np.percentile(between_words_delta, config.BETWEEN_WORDS_PERCENTILE)
+                    words_mean = np.percentile(between_words_delta, settings.BETWEEN_WORDS_PERCENTILE)
                     logger.debug(f"words_mean = {words_mean}")
 
                     start_time = 0

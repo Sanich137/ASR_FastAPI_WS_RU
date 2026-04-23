@@ -2,7 +2,7 @@ from pydantic import BaseModel, HttpUrl, Field, ConfigDict
 from typing import Union, Annotated, Optional, Any, List, Dict
 from fastapi import UploadFile
 
-import config
+from config import settings
 
 
 class BaseResponse(BaseModel):
@@ -65,10 +65,10 @@ class SyncASRRequest(BaseModel):
     do_diarization: Union[bool, None] = False
     make_mono: Union[bool, None] = False
     diar_vad_sensity: int = 3
-    do_auto_speech_speed_correction: Union[bool, None] = config.DO_SPEED_SPEECH_CORRECTION
-    speech_speed_correction_multiplier: Union[float, None] = config.SPEED_SPEECH_CORRECTION_MULTIPLIER
-    use_batch: Union[bool, None] = config.USE_BATCH
-    batch_size: Union[int, None] = config.ASR_BATCH_SIZE
+    do_auto_speech_speed_correction: Union[bool, None] = settings.DO_SPEED_SPEECH_CORRECTION
+    speech_speed_correction_multiplier: Union[float, None] = settings.SPEED_SPEECH_CORRECTION_MULTIPLIER
+    use_batch: Union[bool, None] = settings.USE_BATCH
+    batch_size: Union[int, None] = settings.ASR_BATCH_SIZE
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -105,11 +105,11 @@ class PostFileRequest(BaseModel):
     do_dialogue: Union[bool, None] = False
     do_punctuation: Union[bool, None] = False
     do_diarization: Union[bool, None] = False
-    use_batch: Union[bool, None] = config.USE_BATCH
-    batch_size: Union[int, None] = config.ASR_BATCH_SIZE
+    use_batch: Union[bool, None] = settings.USE_BATCH
+    batch_size: Union[int, None] = settings.ASR_BATCH_SIZE
     diar_vad_sensity: int = 3
-    do_auto_speech_speed_correction: Union[bool, None] = config.DO_SPEED_SPEECH_CORRECTION
-    speech_speed_correction_multiplier: Union[float, None] = config.SPEED_SPEECH_CORRECTION_MULTIPLIER
+    do_auto_speech_speed_correction: Union[bool, None] = settings.DO_SPEED_SPEECH_CORRECTION
+    speech_speed_correction_multiplier: Union[float, None] = settings.SPEED_SPEECH_CORRECTION_MULTIPLIER
     make_mono: Union[bool, None] = False
 
     model_config = ConfigDict(

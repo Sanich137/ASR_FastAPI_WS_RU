@@ -1,6 +1,6 @@
 from utils.do_logging import logger
 import uvicorn
-import config
+from config import settings
 import os
 import gc
 from contextlib import asynccontextmanager
@@ -30,7 +30,7 @@ async def lifespan(app):
     # Настройка сборщика мусора.
     gc.set_threshold(500, 5, 5)
     
-    if config.DO_LOCAL_FILE_RECOGNITIONS:
+    if settings.DO_LOCAL_FILE_RECOGNITIONS:
         observer_thread = threading.Thread(
             target=lambda: start_file_watcher(file_path=str(paths.get("local_recognition_folder"))),
             daemon=True
@@ -108,7 +108,7 @@ def custom_openapi():
 try:
     if __name__ == '__main__':
         app.openapi = custom_openapi
-        uvicorn.run(app, host=config.HOST, port=config.PORT)
+        uvicorn.run(app, host=settings.HOST, port=settings.PORT)
 except KeyboardInterrupt:
     logger.info('\nDone')
 except Exception as e:

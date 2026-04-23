@@ -1,6 +1,6 @@
 import time
 import numpy as np
-import config
+from config import settings
 from Recognizer import recognizer
 from utils.bytes_to_samples_audio import get_np_array_samples_float32
 from utils.resamppling import sync_resample_audiosegment
@@ -43,12 +43,12 @@ def calc_speed(data):
 
 async def simple_recognise(audio_data, ) -> dict:
     # Приводим фреймрейт к фреймрейту модели
-    if audio_data.frame_rate != config.BASE_SAMPLE_RATE:
-        audio_data = sync_resample_audiosegment(audio_data, config.BASE_SAMPLE_RATE)
+    if audio_data.frame_rate != settings.BASE_SAMPLE_RATE:
+        audio_data = sync_resample_audiosegment(audio_data, settings.BASE_SAMPLE_RATE)
 
     # Перевод в семплы для распознавания.
     samples = get_np_array_samples_float32(audio_data.raw_data, audio_data.sample_width)
-    result = asdict(recognizer.recognize(samples, sample_rate=config.BASE_SAMPLE_RATE))
+    result = asdict(recognizer.recognize(samples, sample_rate=settings.BASE_SAMPLE_RATE))
 
     return result
 
@@ -76,12 +76,12 @@ async def recognise_w_speed_correction(audio_data, multiplier=float(1.0), can_sl
     if can_slow_down and multiplier == 1:
         speed = calc_speed(result)
         logger.debug(f"Скорость аудио {speed} единиц в секунду")
-        if speed > config.SPEECH_PER_SEC_NORM_RATE:
-            # print(max((config.SPEECH_PER_SEC_NORM_RATE - 1) / speed, 0.8))
+        if speed > settings.SPEECH_PER_SEC_NORM_RATE:
+            # print(max((settings.SPEECH_PER_SEC_NORM_RATE - 1) / speed, 0.8))
 
             result, speed, multiplier = await recognise_w_speed_correction(audio_data=audio_data,
                                                can_slow_down=True,
-                                               multiplier=max((config.SPEECH_PER_SEC_NORM_RATE-1)/speed, 0.8)
+                                               multiplier=max((settings.SPEECH_PER_SEC_NORM_RATE-1)/speed, 0.8)
                                                                            )
     return result, speed, multiplier
 
@@ -97,7 +97,7 @@ def simple_recognise_batch(list_audio_data: list, batch_size: int = 8) -> list:
     # и выравнивание по длине
     list_of_padded_samples = [samples_padding(samples_to_pad) for samples_to_pad in list_of_all_samples]
 
-    waveform = *pad_list(list_of_padded_samples), config.BASE_SAMPLE_RATE
+    waveform = *pad_list(list_of_padded_samples), settings.BASE_SAMPLE_RATE
     resampled = recognizer.resampler(*waveform)
 
     # Делаем препроцессинг на все данные сразу

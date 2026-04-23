@@ -5,7 +5,7 @@ from fastapi import APIRouter
 from utils.pre_start_init import posted_and_downloaded_audio
 from utils.do_logging import logger
 from utils.get_audio_file import getting_audiofile, open_default_audiofile
-from models.fast_api_models import SyncASRRequest
+from models.fast_api_models import SyncASRRequest, BaseResponse
 from Recognizer.engine.file_recognition import process_file
 from threading import Lock
 from io import BytesIO

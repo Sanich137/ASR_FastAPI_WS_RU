@@ -1,4 +1,4 @@
-import config
+from config import settings
 import numpy as np
 from pydub import AudioSegment
 from utils.do_logging import logger
@@ -25,11 +25,11 @@ async def find_last_speech_position(socket_id, is_last_chunk):
 
     if is_last_chunk:
         last_audio =  audio_overlap[socket_id] + audio_buffer[socket_id]
-        # for i in last_audio[::config.MAX_OVERLAP_DURATION*1000]:
+        # for i in last_audio[::settings.MAX_OVERLAP_DURATION*1000]:
         #     audio_to_asr[socket_id].append(last_audio[:i])
 
-        for i in range(0, len(last_audio), config.MAX_OVERLAP_DURATION*1000):
-            audio_to_asr[socket_id].append(last_audio[i:min(i + config.MAX_OVERLAP_DURATION*1000, len(last_audio))])
+        for i in range(0, len(last_audio), settings.MAX_OVERLAP_DURATION*1000):
+            audio_to_asr[socket_id].append(last_audio[i:min(i + settings.MAX_OVERLAP_DURATION*1000, len(last_audio))])
 
 
 
@@ -83,7 +83,7 @@ async def find_last_speech_position(socket_id, is_last_chunk):
         min_silence_frames = int(duration_seconds / frame_duration)
 
         # Устанавливаем стартовые значения.
-        max_audio_length = len(audio) if len(audio) < config.MAX_OVERLAP_DURATION*silero_bitrate else config.MAX_OVERLAP_DURATION*silero_bitrate
+        max_audio_length = len(audio) if len(audio) < settings.MAX_OVERLAP_DURATION*silero_bitrate else settings.MAX_OVERLAP_DURATION*silero_bitrate
 
         partial_frame_length = 0
 
@@ -148,7 +148,7 @@ async def find_last_speech_position(socket_id, is_last_chunk):
     return
 
 
-def samples_padding(samples, sample_rate = config.BASE_SAMPLE_RATE, duration = config.MAX_OVERLAP_DURATION) -> np.ndarray:
+def samples_padding(samples, sample_rate = settings.BASE_SAMPLE_RATE, duration = settings.MAX_OVERLAP_DURATION) -> np.ndarray:
 
     max_samples_len = int(duration * sample_rate)
     # Выравнивание до максимальной длины
@@ -158,8 +158,8 @@ def samples_padding(samples, sample_rate = config.BASE_SAMPLE_RATE, duration = c
         padded_samples[:len(samples)] = samples
     elif len(samples) > max_samples_len:
         # Обрезка до максимальной длины
-        logger.warning(f"Аудио длиной {len(samples) / config.BASE_SAMPLE_RATE:.2f} сек. "
-                       f"превышает MAX_OVERLAP_DURATION ({config.MAX_OVERLAP_DURATION} сек.). "
+        logger.warning(f"Аудио длиной {len(samples) / settings.BASE_SAMPLE_RATE:.2f} сек. "
+                       f"превышает MAX_OVERLAP_DURATION ({settings.MAX_OVERLAP_DURATION} сек.). "
                        f"Будет обрезано до {max_samples_len} семплов.")
         padded_samples = samples[:max_samples_len]
 

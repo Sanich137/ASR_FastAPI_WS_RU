@@ -4,6 +4,7 @@ import datetime
 import os
 import pynvml
 from utils.pre_start_init import audio_to_asr
+from models.fast_api_models import BaseResponse
 
 
 router = APIRouter()
@@ -24,7 +25,7 @@ def get_gpu_free_memory():
     return free_mb, gpu_load,temperature
 
 
-@router.get("/is_alive")
+@router.get("/is_alive", response_model=BaseResponse)
 async def check_if_service_is_alive():
 
     logging.info('GET_is_alive')
@@ -37,11 +38,14 @@ async def check_if_service_is_alive():
     else:
         state = "in_work"
 
-    return {"error": False,
-            "error_description": None,
+    return BaseResponse(
+        success=True,
+        error_description=None,
+        data={
             "state": state,
             "tasks_in_work": tasks_in_work,
             "free_memory_mb": free_mb,
             "gpu_load_percent": gpu_load,
             "temperature_celsius": temperature
-            }
+        }
+    )

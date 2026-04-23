@@ -1,13 +1,22 @@
 from fastapi import APIRouter
+from models.fast_api_models import BaseResponse
 import config
 
 router = APIRouter()
 
-@router.get("/")
+@router.get("/", response_model=BaseResponse)
 async def root():
-    print("Зашли в root")
-
-    return {"error": True,
-            "data": "No_service_selected",
-            # "available_services": ["Vosk_Recognizer"],
-            "comment": f"try_addr: http://{config.HOST}:{config.PORT}/docs"}
+    return BaseResponse(
+        success=True,
+        error_description=None,
+        data={"message": "No_service_selected",
+              "available_endpoints": {
+                  "POST /post_one_step_req": "ASR by URL",
+                  "POST /post_file": "ASR by file upload",
+                  "WS /ws": "WebSocket streaming ASR",
+                  "GET /is_alive": "Service health check",
+                  "GET /docs": "API documentation",
+                  "/demo": "DEMO UI page"
+              },
+              "try_addr": f"http://{config.settings.HOST}:{config.settings.PORT}/docs"}
+    )

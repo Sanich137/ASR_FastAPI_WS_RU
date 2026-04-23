@@ -1,7 +1,7 @@
 from pydub import AudioSegment
 
 import ujson
-import config
+from config import settings
 import uuid
 from io import BytesIO
 
@@ -24,15 +24,15 @@ async def websocket(ws: WebSocket):
     wait_null_answers=True
     client_id = uuid.uuid4()
     logger.debug(f'Принят новый сокет id = {client_id}')
-    audio_buffer[client_id] = AudioSegment.silent(1, frame_rate=config.BASE_SAMPLE_RATE)
-    audio_overlap[client_id] = AudioSegment.silent(1, frame_rate=config.BASE_SAMPLE_RATE)
+    audio_buffer[client_id] = AudioSegment.silent(1, frame_rate=settings.BASE_SAMPLE_RATE)
+    audio_overlap[client_id] = AudioSegment.silent(1, frame_rate=settings.BASE_SAMPLE_RATE)
     audio_duration[client_id] = 0
     audio_to_asr[client_id] = list()
     ws_collected_asr_res[client_id] = {f"channel_{1}": list()}
     do_dialogue = False
     do_punctuation = False
     audio_format = 'raw'
-    sample_rate = config.BASE_SAMPLE_RATE  # Если не получен фреймрейт в конфиге сокета, по попытается принять с конфигом модели.
+    sample_rate = settings.BASE_SAMPLE_RATE  # Если не получен фреймрейт в конфиге сокета, по попытается принять с конфигом модели.
     sentenced_data = None
     error_description = None
 
@@ -97,8 +97,8 @@ async def websocket(ws: WebSocket):
                         logger.debug(f"Чанк принят и распознан in channel {channel_name}")
 
                 # Приводим фреймрейт к фреймрейту модели
-                if audiosegment_chunk.frame_rate != config.BASE_SAMPLE_RATE:
-                    audiosegment_chunk = await async_resample_audiosegment(audiosegment_chunk, config.BASE_SAMPLE_RATE)
+                if audiosegment_chunk.frame_rate != settings.BASE_SAMPLE_RATE:
+                    audiosegment_chunk = await async_resample_audiosegment(audiosegment_chunk, settings.BASE_SAMPLE_RATE)
 
                 if audiosegment_chunk.channels != 1:
                     audiosegment_chunk = audiosegment_chunk.set_channels(1)
@@ -107,7 +107,7 @@ async def websocket(ws: WebSocket):
                 audio_buffer[client_id] += audiosegment_chunk
 
                 # Накопили больше нормы
-                if (audio_overlap[client_id]+audio_buffer[client_id]).duration_seconds >= config.MAX_OVERLAP_DURATION:
+                if (audio_overlap[client_id]+audio_buffer[client_id]).duration_seconds >= settings.MAX_OVERLAP_DURATION:
                     # Проверяем новый чанк перед объединением (там же режем хвост и добавляем его при необходимости)
                     await find_last_speech_position(client_id, is_last_chunk=False)
                 else:
