@@ -1,6 +1,8 @@
 from utils.do_logging import logger
 import uvicorn
 import config
+import os
+import gc
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,6 +26,10 @@ import models
 async def lifespan(app):
     # on_start
     logger.debug("Приложение FastAPI запущено")
+    
+    # Настройка сборщика мусора.
+    gc.set_threshold(500, 5, 5)
+    
     if config.DO_LOCAL_FILE_RECOGNITIONS:
         observer_thread = threading.Thread(
             target=lambda: start_file_watcher(file_path=str(paths.get("local_recognition_folder"))),
@@ -40,7 +46,7 @@ app = FastAPI(
     version="1.0",
     docs_url='/docs',
     root_path='/root',
-    title='ASR on SHERPA-ONNX'
+    title='ASR'
 )
 
 # CORS middleware
@@ -70,7 +76,7 @@ def custom_openapi():
         version="1.0.0",
         description="Real-time Russian ASR via WebSocket. Send raw audio chunks (16 kHz, mono).",
         routes=app.routes,
-        contact={"email": "your@email.com"},
+        contact={"email": "Kojevnikov@amulex.ru"},
     )
     # Добавляем пример для WebSocket
     openapi_schema["paths"]["/ws"]["websocket"] = {

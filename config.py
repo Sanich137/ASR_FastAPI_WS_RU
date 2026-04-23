@@ -120,7 +120,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode='after')
     def _compute_derived(self):
-        # Сохраняем side-effect для HuggingFace (совместимость с существующим кодом)
+        # HF_HOME должен быть установлен ДО импорта библиотек, использующих HuggingFace Hub
         os.environ["HF_HOME"] = self.HF_HOME
 
         # К имени модели диаризации всегда добавляем расширение .onnx

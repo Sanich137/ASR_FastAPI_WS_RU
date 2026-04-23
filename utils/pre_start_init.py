@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 from pathlib import Path
 import config
-import gc
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -54,7 +53,3 @@ audio_duration = defaultdict(float)
 ws_collected_asr_res = defaultdict()
 posted_and_downloaded_audio = defaultdict()
 
-# Устанавливаем новые пороги сборщика мусора
-gc.set_threshold(500,  # быстрые файлы было 700
-                 5,    # средне выживающие файлы было 10
-                 5)    # долгожители было 10.
