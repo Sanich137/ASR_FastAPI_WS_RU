@@ -78,6 +78,7 @@ class ErrorResponse(BaseModel):
     """
     success: bool = False
     error_description: str
+    details: Optional[str] = None
     raw_data: Optional[Dict[str, Any]] = None
     sentenced_data: Optional[Dict[str, Any]] = None
     diarized_data: Optional[Dict[str, Any]] = None

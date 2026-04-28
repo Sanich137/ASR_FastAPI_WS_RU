@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 import logging
 from utils.pre_start_init import audio_to_asr
-from routes.is_alive import get_gpu_free_memory
+from routes.legacy.is_alive import get_gpu_free_memory
 from models.fast_api_models import V1IsAliveResponse, IsAliveData
 
 router = APIRouter()

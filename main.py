@@ -15,14 +15,9 @@ from utils.files_whatcher import start_file_watcher
 from utils.pre_start_init import paths
 import threading
 
-from routes.root import router as root_router
-from routes.is_alive import router as is_alive_router
-from routes.post_ws import router as post_ws_router
-from routes.post_by_file_FORM import router as post_by_file_router
-from routes.post_by_url import router as post_by_url_router
 from routes.ws_audio_transkrib import router as ws_audio_transkrib_router
-from routes.demo_page import router as demo_router
 from routes.v1 import router as v1_router
+from routes.legacy import router as legacy_router
 from models.fast_api_models import ErrorResponse
 import models
 
@@ -64,10 +59,8 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         status_code=422,
         content=ErrorResponse(
             success=False,
-            error_description=str(exc),
-            raw_data={},
-            sentenced_data={},
-            diarized_data={},
+            error_description="Validation error",
+            details=str(exc),
         ).model_dump()
     )
 
@@ -79,24 +72,20 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         content=ErrorResponse(
             success=False,
             error_description=exc.detail,
-            raw_data={},
-            sentenced_data={},
-            diarized_data={},
         ).model_dump()
     )
 
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Unhandled exception: {exc}")
+    import traceback
+    logger.error(f"Unhandled exception: {exc}\n{traceback.format_exc()}")
     return JSONResponse(
         status_code=500,
         content=ErrorResponse(
             success=False,
             error_description="Internal server error",
-            raw_data={},
-            sentenced_data={},
-            diarized_data={},
+            details=str(exc),
         ).model_dump()
     )
 
@@ -114,13 +103,8 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Routers
-app.include_router(root_router, tags=["legacy"])
-app.include_router(is_alive_router, tags=["legacy"])
-app.include_router(post_ws_router, tags=["legacy"])
-app.include_router(post_by_file_router, tags=["legacy"])
-app.include_router(post_by_url_router, tags=["legacy"])
 app.include_router(ws_audio_transkrib_router, tags=["legacy"])
-app.include_router(demo_router, tags=["legacy"])
+app.include_router(legacy_router, tags=["legacy"])
 app.include_router(v1_router, tags=["v1"])
 
 def custom_openapi():
