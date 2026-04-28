@@ -114,14 +114,14 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Routers
-app.include_router(root_router)
-app.include_router(is_alive_router)
-app.include_router(post_ws_router)
-app.include_router(post_by_file_router)
-app.include_router(post_by_url_router)
-app.include_router(ws_audio_transkrib_router)
-app.include_router(demo_router)
-app.include_router(v1_router)
+app.include_router(root_router, tags=["legacy"])
+app.include_router(is_alive_router, tags=["legacy"])
+app.include_router(post_ws_router, tags=["legacy"])
+app.include_router(post_by_file_router, tags=["legacy"])
+app.include_router(post_by_url_router, tags=["legacy"])
+app.include_router(ws_audio_transkrib_router, tags=["legacy"])
+app.include_router(demo_router, tags=["legacy"])
+app.include_router(v1_router, tags=["v1"])
 
 def custom_openapi():
     openapi_schema = get_openapi(

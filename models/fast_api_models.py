@@ -26,6 +26,52 @@ class V1BaseResponse(BaseModel):
     data: dict = {}
 
 
+class RawData(BaseModel):
+    """Структура сырых данных ASR."""
+    result: Optional[List[Dict[str, Any]]] = None
+    text: Optional[str] = None
+
+
+class SentencedData(BaseModel):
+    """Структура разбитого на предложения ответа."""
+    raw_text_sentenced_recognition: Optional[str] = None
+    list_of_sentenced_recognitions: Optional[List[Dict[str, Any]]] = None
+    full_text_only: Optional[List[str]] = None
+    err_state: Optional[Any] = None
+
+
+class DiarizedData(BaseModel):
+    """Структура данных диаризации."""
+    speakers: Optional[List[str]] = None
+    segments: Optional[List[Dict[str, Any]]] = None
+
+
+class ASRData(BaseModel):
+    """Данные ответа ASR роутеров (post_by_url, post_by_file)."""
+    raw_data: Optional[RawData] = None
+    sentenced_data: Optional[SentencedData] = None
+    diarized_data: Optional[DiarizedData] = None
+
+
+class V1ASRResponse(V1BaseResponse):
+    """Модель ответа для ASR роутов (post_by_url, post_by_file)."""
+    data: ASRData = ASRData()
+
+
+class IsAliveData(BaseModel):
+    """Структура данных ответа is_alive."""
+    state: str
+    tasks_in_work: int
+    free_memory_mb: Optional[float] = None
+    gpu_load_percent: Optional[float] = None
+    temperature_celsius: Optional[float] = None
+
+
+class V1IsAliveResponse(V1BaseResponse):
+    """Модель ответа для is_alive."""
+    data: Optional[IsAliveData] = None
+
+
 class ErrorResponse(BaseModel):
     """
     Модель ошибки API.
