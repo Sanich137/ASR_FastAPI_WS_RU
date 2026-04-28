@@ -4,7 +4,10 @@ from config import settings
 import os
 import gc
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.openapi.utils import get_openapi
@@ -19,6 +22,8 @@ from routes.post_by_file_FORM import router as post_by_file_router
 from routes.post_by_url import router as post_by_url_router
 from routes.ws_audio_transkrib import router as ws_audio_transkrib_router
 from routes.demo_page import router as demo_router
+from routes.v1 import router as v1_router
+from models.fast_api_models import ErrorResponse
 import models
 
 
@@ -29,6 +34,9 @@ async def lifespan(app):
     
     # Настройка сборщика мусора.
     gc.set_threshold(500, 5, 5)
+    
+    # Установка HF_HOME для HuggingFace Hub
+    os.environ["HF_HOME"] = settings.HF_HOME
     
     if settings.DO_LOCAL_FILE_RECOGNITIONS:
         observer_thread = threading.Thread(
@@ -48,6 +56,50 @@ app = FastAPI(
     root_path='/root',
     title='ASR'
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=422,
+        content=ErrorResponse(
+            success=False,
+            error_description=str(exc),
+            raw_data={},
+            sentenced_data={},
+            diarized_data={},
+        ).model_dump()
+    )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=ErrorResponse(
+            success=False,
+            error_description=exc.detail,
+            raw_data={},
+            sentenced_data={},
+            diarized_data={},
+        ).model_dump()
+    )
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled exception: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content=ErrorResponse(
+            success=False,
+            error_description="Internal server error",
+            raw_data={},
+            sentenced_data={},
+            diarized_data={},
+        ).model_dump()
+    )
+
 
 # CORS middleware
 app.add_middleware(
@@ -69,6 +121,7 @@ app.include_router(post_by_file_router)
 app.include_router(post_by_url_router)
 app.include_router(ws_audio_transkrib_router)
 app.include_router(demo_router)
+app.include_router(v1_router)
 
 def custom_openapi():
     openapi_schema = get_openapi(

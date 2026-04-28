@@ -11,7 +11,19 @@ class BaseResponse(BaseModel):
     """
     success: bool = True
     error_description: Optional[str] = None
-    data: Optional[Dict[str, Any]] = None
+    raw_data: Optional[Dict[str, Any]] = None
+    sentenced_data: Optional[Dict[str, Any]] = None
+    diarized_data: Optional[Dict[str, Any]] = None
+
+
+class V1BaseResponse(BaseModel):
+    """
+    Единый формат ответа для API v1.
+    Все данные помещаются в поле data.
+    """
+    success: bool = True
+    error_description: Optional[str] = None
+    data: dict = {}
 
 
 class ErrorResponse(BaseModel):
@@ -20,7 +32,9 @@ class ErrorResponse(BaseModel):
     """
     success: bool = False
     error_description: str
-    data: Optional[Dict[str, Any]] = None
+    raw_data: Optional[Dict[str, Any]] = None
+    sentenced_data: Optional[Dict[str, Any]] = None
+    diarized_data: Optional[Dict[str, Any]] = None
 
 
 class UserBase(BaseModel):

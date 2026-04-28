@@ -11,6 +11,7 @@ router = APIRouter()
 
 def get_gpu_free_memory():
     try:
+        # todo Доработать, выдавать ответ в зависимости от провайдера.
         pynvml.nvmlInit()
         handle = pynvml.nvmlDeviceGetHandleByIndex(0)  # Первая видеокарта
         mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
@@ -19,33 +20,32 @@ def get_gpu_free_memory():
         gpu_load = utilization.gpu
         temperature = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
     except pynvml.NVMLError as e:
-        return {"error": str(e)}
+        return {"error": str(e)}, None, None, None
     finally:
         pynvml.nvmlShutdown()
-    return free_mb, gpu_load,temperature
+    return None, free_mb, gpu_load,temperature
 
 
-@router.get("/is_alive", response_model=BaseResponse)
+@router.get("/is_alive")
 async def check_if_service_is_alive():
-
+    error_description = None
     logging.info('GET_is_alive')
     tasks_in_work = len(audio_to_asr)
 
-    free_mb, gpu_load,temperature = get_gpu_free_memory()
+    error, free_mb, gpu_load,temperature = get_gpu_free_memory()
+    if error:
+        error_description = error.get("error",None)
 
     if tasks_in_work == 0:
         state = "idle"
     else:
         state = "in_work"
 
-    return BaseResponse(
-        success=True,
-        error_description=None,
-        data={
+    return {"error": False,
+            "error_description": error_description,
             "state": state,
             "tasks_in_work": tasks_in_work,
             "free_memory_mb": free_mb,
             "gpu_load_percent": gpu_load,
             "temperature_celsius": temperature
-        }
-    )
+            }

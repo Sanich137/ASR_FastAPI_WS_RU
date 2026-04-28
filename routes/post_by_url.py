@@ -16,27 +16,24 @@ router = APIRouter()
 # Глобальный лок для потокобезопасности
 audio_lock = Lock()
 
-@router.post("/post_one_step_req")
-async def post(params: SyncASRRequest):
+@router.post("/post_one_step_req", response_model=BaseResponse)
+async def post(params: SyncASRRequest) -> BaseResponse:
     """
-    На вход принимает HttpUrl - прямую ссылку на скачивание файла 'mp3', 'wav' или 'ogg'.\n
+    На вход ждёт str(HttpUrl) - прямую ссылку на скачивание файла 'mp3', 'wav' или 'ogg'.\n
     Если на вход передаётся не моно, то ответ будет в несколько элементов списка для каждого канала.\n
-    По умолчанию отдаёт сырой результат распознавания с разбивкой на части продолжительностью около 15 секунд\n
 
     :param: do_dialogue: - true, если нужно разбить речь на диалог\n
-    :param: do_punctuation - true, если нужно расставить пунктуацию. Применяется к диалогу, общему тексту. В проекте.\n
-    При проектировании таймаутов учитывайте скорость распознавания (около 100 секунд аудио распознаётся за 2-5 секунд
-    распознавания одного канала)
+    :param: do_punctuation - true, если нужно расставить пунктуацию. Применяется к диалогу, и отдельно к общему тексту.\n
+    :param:keep_raw: Сохранять ли в выводе "сырые данные" - распознавание по словам. \n
+    :param:do_echo_clearing: Очищать от межканального эха \n
+    :param:do_diarization: Разделать речь на спикеров. Работает только с моно файлами. \n
+    :param:make_mono: Объединить каналы аудио в моно файл \n
+    :param:diar_vad_sensity: Чувствительность детектора голоса. \n
+    :param:do_auto_speech_speed_correction: Корректировать скорость речи (для очень быстрой речи). \n
+    :param:speech_speed_correction_multiplier: Задать коэффициент корректировки скорости речи \n
+    :param:use_batch: Union[bool, None] = Использовать пакетную обработку. Полезно при невозможности использовать Tensorrt \n
+    :param:batch_size: Union[int, None] = Размер пакета для обработки. \n
     """
-    res = True
-    error_description = str()
-
-    result = {
-        "success": res,
-        "error_description": error_description,
-        "raw_data": dict(),
-        "sentenced_data": dict(),
-    }
 
     # Получаем файл
     post_id = uuid.uuid4()
@@ -47,20 +44,27 @@ async def post(params: SyncASRRequest):
 
     if not res:
         logger.error(f'Ошибка получения файла - {error_description}, ссылка на файл - {params.AudioFileUrl}')
-        return {
-            "success": False,
-            "error_description": error_description,
-            "raw_data": dict(),
-            "sentenced_data": dict(),
-        }
+        return BaseResponse(
+            success=False,
+            error_description=error_description,
+            raw_data={},
+            sentenced_data={},
+            diarized_data={},
+        )
 
     try:
         # Запускаем обработку в потоке
-        result = await asyncio.to_thread(process_file, posted_and_downloaded_audio[post_id], params)
+        result_dict = await asyncio.to_thread(process_file, posted_and_downloaded_audio[post_id], params)
+        result = BaseResponse(**result_dict)
     except Exception as e:
         error_description = f"Ошибка обработки в process_file - {e}"
         logger.error(error_description)
-        result["success"] = False
-        result['error_description'] = str(error_description)
+        return BaseResponse(
+            success=False,
+            error_description=str(error_description),
+            raw_data={},
+            sentenced_data={},
+            diarized_data={},
+        )
 
     return result

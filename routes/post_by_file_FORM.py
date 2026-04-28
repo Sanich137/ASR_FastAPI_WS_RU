@@ -4,7 +4,7 @@ import asyncio
 from config import settings
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from utils.do_logging import logger
-from models.fast_api_models import PostFileRequest
+from models.fast_api_models import PostFileRequest, BaseResponse
 from Recognizer.engine.file_recognition import process_file
 from threading import Lock
 
@@ -44,21 +44,11 @@ def get_file_request(
     )
 
 
-@router.post("/post_file")
+@router.post("/post_file", response_model=BaseResponse)
 async def async_receive_file(
     file: UploadFile = File(description="Аудиофайл для обработки"),
     params: PostFileRequest = Depends(get_file_request),
-):
-    res = True
-    error_description = str()
-
-    result = {
-        "success": res,
-        "error_description": error_description,
-        "raw_data": dict(),
-        "sentenced_data": dict(),
-    }
-
+) -> BaseResponse:
     # Сохраняем файл на диск асинхронно
     try:
         buffer = BytesIO(await file.read())
@@ -66,19 +56,29 @@ async def async_receive_file(
     except Exception as e:
         error_description = f"Не удалось сохранить файл для распознавания: {file.filename}, размер файла: {file.size}, по причине: {e}"
         logger.error(error_description)
-        result["success"] = False
-        result["error_description"] = error_description
-        return result
+        return BaseResponse(
+            success=False,
+            error_description=error_description,
+            raw_data={},
+            sentenced_data={},
+            diarized_data={},
+        )
     else:
         logger.info(f"Получен и сохранён файл {file.filename}")
         try:
             # Запускаем обработку в потоке
-            result = await asyncio.to_thread(process_file, buffer, params)
+            result_dict = await asyncio.to_thread(process_file, buffer, params)
+            result = BaseResponse(**result_dict)
         except Exception as e:
             error_description = f"Ошибка обработки в process_file - {e}"
             logger.error(error_description)
-            result["success"] = False
-            result['error_description'] = str(error_description)
+            result = BaseResponse(
+                success=False,
+                error_description=str(error_description),
+                raw_data={},
+                sentenced_data={},
+                diarized_data={},
+            )
         finally:
             # Удаляем временный файл
             await file.close()
