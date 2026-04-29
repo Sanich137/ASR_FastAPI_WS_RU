@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import date
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -19,6 +20,9 @@ class Settings(BaseSettings):
     # server settings
     HOST: str = '0.0.0.0'
     PORT: int = 49153
+    ALLOWED_HOSTS: list[str] = ["*"]
+    CORS_ORIGINS: list[str] = ["*"]
+    TRUSTED_PROXIES: list[str] = ["*"]
 
     # Model settings
     # Vosk5SmallStreaming  Vosk5 Gigaam Whisper Gigaam_rnnt, "gigaam-v3-rnnt", "gigaam-v3-ctc"
@@ -138,6 +142,14 @@ class Settings(BaseSettings):
         # PUNCTUATE_WITH_GPU актуален только при GPU-провайдерах
         if self.PUNCTUATE_WITH_GPU and self.PROVIDER not in ["CUDA", "TENSORRT"]:
             self.PUNCTUATE_WITH_GPU = False
+
+        # Предупреждение о небезопасной CORS-конфигурации в продакшене
+        if self.IS_PROD and self.CORS_ORIGINS == ["*"]:
+            logging.warning(
+                "SECURITY WARNING: CORS_ORIGINS is set to ['*'] in production (IS_PROD=True). "
+                "This is insecure when allow_credentials=True. "
+                "Please specify explicit origins in CORS_ORIGINS."
+            )
 
         return self
 

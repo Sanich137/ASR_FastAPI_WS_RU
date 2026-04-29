@@ -1,3 +1,4 @@
+pytest
 setuptools
 pydantic_settings
 httpx~=0.28.1
@@ -47,3 +48,5 @@ watchdog~=6.0.0
 onnx-asr == 0.10.2
 hf_xet
 onnxruntime
+
+starlette

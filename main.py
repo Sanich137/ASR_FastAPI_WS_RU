@@ -10,7 +10,11 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.openapi.utils import get_openapi
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.gzip import GZipMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+import uuid
 from utils.files_whatcher import start_file_watcher
 from utils.pre_start_init import paths
 import threading
@@ -21,6 +25,15 @@ from routes.legacy import router as legacy_router
 from models.fast_api_models import ErrorResponse
 import models
 from config import WS_DESCRIPTION
+
+class RequestIDMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+        request.state.request_id = request_id
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
+
 
 @asynccontextmanager
 async def lifespan(app):
@@ -90,13 +103,34 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 
+# RequestID middleware
+app.add_middleware(RequestIDMiddleware)
+
+# ProxyHeaders middleware
+app.add_middleware(
+    ProxyHeadersMiddleware,
+    trusted_hosts=settings.TRUSTED_PROXIES,
+)
+
+# TrustedHost middleware
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=settings.ALLOWED_HOSTS,
+)
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+# GZip middleware
+app.add_middleware(
+    GZipMiddleware,
+    minimum_size=1000,
 )
 
 # Static files
@@ -107,38 +141,6 @@ app.include_router(ws_audio_transkrib_router, tags=["legacy"])
 app.include_router(legacy_router, tags=["legacy"])
 app.include_router(v1_router, tags=["v1"])
 
-# def custom_openapi():
-#     if app.openapi_schema:
-#         return app.openapi_schema
-#     openapi_schema = get_openapi(
-#         title="ASR Speech Recognition API",
-#         version="1.0.0",
-#         description="Real-time Russian ASR via WebSocket. Send raw audio chunks (16 kHz, mono).",
-#         routes=app.routes,
-#         contact={"email": "Kojevnikov@amulex.ru"},
-#     )
-#     # Добавляем описание для WebSocket endpoint
-#     # FastAPI автоматически генерирует WebSocket документацию, но мы можем улучшить её описание
-#     if "/ws" in openapi_schema.get("paths", {}):
-#         # Удаляем стандартный путь, так как он не подходит для WebSocket
-#         del openapi_schema["paths"]["/ws"]
-#
-#     # Добавляем кастомное описание WebSocket
-#     openapi_schema["paths"]["/ws"] = {
-#         "summary": "WebSocket Stream for Audio Transcription",
-#         "description": "Подключитесь по WebSocket для потоковой передачи аудио. Отправляйте raw audio bytes (PCM, 16-bit, mono, 16kHz). Получайте результаты транскрипции в JSON.",
-#         "servers": [
-#             {"url": "ws://{host}/ws", "description": "WebSocket server"}
-#         ],
-#         "x-postman-collection-name": "ASR WebSocket"
-#     }
-#
-#     app.openapi_schema = openapi_schema
-#     return openapi_schema
-
-
-
-
 try:
     if __name__ == '__main__':
         # app.openapi = app.openapi_schema
@@ -147,4 +149,3 @@ except KeyboardInterrupt:
     logger.info('\nDone')
 except Exception as e:
     logger.error(f'\nDone with error {e}')
-

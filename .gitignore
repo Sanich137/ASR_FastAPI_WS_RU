@@ -4,7 +4,7 @@
 *.ogg
 *.onnx
 *.m4a
-*.md
+*.history.md
 /.venv/
 /venv/
 /models/vosk-model-ru/
