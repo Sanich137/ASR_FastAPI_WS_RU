@@ -37,7 +37,7 @@ def get_file_request(
 
 
 @router.post("/post_file", response_model=V1ASRResponse)
-async def async_receive_file_v1(
+async def async_receive_file(
     file: UploadFile = File(description="Аудиофайл для обработки"),
     params: PostFileRequest = Depends(get_file_request),
 ) -> V1ASRResponse:

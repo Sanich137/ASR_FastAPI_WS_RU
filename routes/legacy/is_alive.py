@@ -1,10 +1,7 @@
 from fastapi import APIRouter
 import logging
-import datetime
-import os
 import pynvml
 from utils.pre_start_init import audio_to_asr
-from models.fast_api_models import BaseResponse
 
 
 router = APIRouter()

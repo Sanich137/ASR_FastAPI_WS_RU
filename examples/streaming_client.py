@@ -47,7 +47,9 @@ class ASRStreamingClient:
             "sample_rate": sample_rate,
             "wait_null_answers": wait_null_answers,
             "audio_format": "pcm16",
-            "language": "ru"
+            "language": "ru",
+            "do_dialogue": "true",
+            "do_punctuation": "false",
         }
         await websocket.send(ujson.dumps({"config": config}))
         logging.info("Configuration sent")
@@ -136,6 +138,7 @@ if __name__ == "__main__":
         args.uri,
         frame_rate=args.frame_rate,
         buffer_size_sec=args.buffer_size
+
     )
 
     try:

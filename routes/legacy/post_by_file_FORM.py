@@ -45,7 +45,7 @@ def get_file_request(
 
 
 @router.post("/post_file", response_model=BaseResponse)
-async def async_receive_file(
+async def async_receive_file_legacy(
     file: UploadFile = File(description="Аудиофайл для обработки"),
     params: PostFileRequest = Depends(get_file_request),
 ) -> BaseResponse:

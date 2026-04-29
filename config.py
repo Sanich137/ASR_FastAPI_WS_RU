@@ -145,42 +145,7 @@ class Settings(BaseSettings):
 # Единственный экземпляр настроек
 settings = Settings()
 
-# ==============================================================================
-# Обратная совместимость: экспортируем атрибуты на уровень модуля.
-# Все остальные модули проекта могут продолжать использовать `config.HOST`,
-# `config.PORT` и т.д. без изменений.
-# ==============================================================================
-# BASE_SAMPLE_RATE = settings.BASE_SAMPLE_RATE
-# PROVIDER = settings.PROVIDER
-# NUM_THREADS = settings.NUM_THREADS
-# HF_HOME = settings.HF_HOME
-# LOGGING_LEVEL = settings.LOGGING_LEVEL
-# LOGGING_FORMAT = settings.LOGGING_FORMAT
-# FILENAME = settings.FILENAME
-# FILEMODE = settings.FILEMODE
-# LOG_BACKUP_COUNT = settings.LOG_BACKUP_COUNT
-# IS_PROD = settings.IS_PROD
-# MAX_OVERLAP_DURATION = settings.MAX_OVERLAP_DURATION
-# RECOGNITION_ATTEMPTS = settings.RECOGNITION_ATTEMPTS
-# SPEECH_PER_SEC_NORM_RATE = settings.SPEECH_PER_SEC_NORM_RATE
-# MAKE_MONO = settings.MAKE_MONO
-# USE_BATCH = settings.USE_BATCH
-# ASR_BATCH_SIZE = settings.ASR_BATCH_SIZE
-# VAD_SENSITIVITY = settings.VAD_SENSITIVITY
-# VAD_WITH_GPU = settings.VAD_WITH_GPU
-# BETWEEN_WORDS_PERCENTILE = settings.BETWEEN_WORDS_PERCENTILE
-# CAN_PUNCTUATE = settings.CAN_PUNCTUATE
-# PUNCTUATE_WITH_GPU = settings.PUNCTUATE_WITH_GPU
-# CAN_DIAR = settings.CAN_DIAR
-# DIAR_MODEL_NAME = settings.DIAR_MODEL_NAME
-# DIAR_WITH_GPU = settings.DIAR_WITH_GPU
-# CPU_WORKERS = settings.CPU_WORKERS
-# DIAR_GPU_BATCH_SIZE = settings.DIAR_GPU_BATCH_SIZE
-# DO_SPEED_SPEECH_CORRECTION = settings.DO_SPEED_SPEECH_CORRECTION
-# SPEED_SPEECH_CORRECTION_MULTIPLIER = settings.SPEED_SPEECH_CORRECTION_MULTIPLIER
-# DO_LOCAL_FILE_RECOGNITIONS = settings.DO_LOCAL_FILE_RECOGNITIONS
-# DELETE_LOCAL_FILE_AFTR_ASR = settings.DELETE_LOCAL_FILE_AFTR_ASR
-# HUMAN_FORMAT_MD_FILE = settings.HUMAN_FORMAT_MD_FILE
+
 
 AUDIOEXTENTIONS = [
     # Основные форматы
@@ -196,3 +161,91 @@ AUDIOEXTENTIONS = [
     # Редкие/устаревшие форматы
     '.669', '.mtm', '.med', '.far', '.umx'
 ]
+
+# Описание WebSocket для OpenAPI
+WS_DESCRIPTION = """
+## WebSocket Endpoint -  `/ws`
+### Пример конфигурации
+
+Отправьте JSON с конфигурацией:
+
+```json
+    {
+        "config": {
+            "audio_format": "pcm16",
+            "sample_rate": 16000,
+            "wait_null_answers": true,
+            "do_dialogue": false,
+            "do_punctuation": false,
+            "channelName": "channel_1" # id канала из астериск, например.
+      }
+    }
+```
+
+### Пример передачи данных.
+
+Периодически отправляйте raw_audio_data - PCM, 16-bit, mono
+
+```json
+    {
+        "bytes": binary
+    }
+```
+
+### Пример EOF
+
+По завершении отправьте:
+```json
+    {
+        "text": "eof"
+    }
+```
+
+### Ответы
+
+``` json
+    {
+        'channel_name': 'Null',
+         'silence': False,
+         'data': {
+             'result':
+                      [
+                          {'conf': 1.0, 'start': 116.48, 'end': 116.76, 'word': 'владимир'},
+                          {'conf': 1.0, 'start': 116.92, 'end': 117.48, 'word': 'анатольевич'}
+                      ],
+             'text': 'владимир анатольевич'},
+         'error': None,
+         'last_message': False,
+         'sentenced_data': {}
+     }
+```
+Если в config передать "do_dialogue":true и "do_punctuation":true то в последнем ответе будет предоставлен Капитализированный
+текст, с пунктуацией разбитый на фразы.
+
+```json
+    {
+        'channel_name': 'Null',
+         'silence': False,
+         'data': {
+             'result':
+                      [
+                        {"conf": 1, "start": 0.04, "end": 0.36, "word": "ничьих"},
+                        {"conf": 1, "start": 0.52, "end": 0.56, "word": "не"},
+                        {"conf": 1, "start": 0.64, "end": 0.92, "word": "требуя" },
+                        {"conf": 1, "start": 1.08,"end": 1.44,"word": "похвал"},
+                        ],
+             "text": "ничьих не требуя похвал ... "
+             },
+         'error': None,
+         'last_message': True,
+         'sentenced_data': {
+            'raw_text_sentenced_recognition': "channel_1: Ничьих, не требуя ... мои.\n                     channel_1: У Лукоморья дуб зеленый.", # текст построчно разбитый на фразы.
+            'list_of_sentenced_recognitions': [{'start': 1.0, 'end': 1.28, 'text': 'У Лукоморья дуб зеленый.', 'speaker': 'channel_1'},... ]
+            "full_text_only": [
+                "Ничьих, не требуя похвал. Счастлив уж я надеждой сладкой, что дева с трепетом любви посмотрит, может быть, украдкой на песни грешные мои. У Лукоморья дуб зеленый."
+                                ],
+                            }
+     }
+
+```
+"""

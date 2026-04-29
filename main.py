@@ -20,7 +20,7 @@ from routes.v1 import router as v1_router
 from routes.legacy import router as legacy_router
 from models.fast_api_models import ErrorResponse
 import models
-
+from config import WS_DESCRIPTION
 
 @asynccontextmanager
 async def lifespan(app):
@@ -49,9 +49,9 @@ app = FastAPI(
     version="1.0",
     docs_url='/docs',
     root_path='/root',
-    title='ASR'
-)
-
+    title='ASR',
+    description=WS_DESCRIPTION
+    )
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
@@ -107,44 +107,41 @@ app.include_router(ws_audio_transkrib_router, tags=["legacy"])
 app.include_router(legacy_router, tags=["legacy"])
 app.include_router(v1_router, tags=["v1"])
 
-def custom_openapi():
-    openapi_schema = get_openapi(
-        title="ASR Speech Recognition API",
-        version="1.0.0",
-        description="Real-time Russian ASR via WebSocket. Send raw audio chunks (16 kHz, mono).",
-        routes=app.routes,
-        contact={"email": "Kojevnikov@amulex.ru"},
-    )
-    # Добавляем пример для WebSocket
-    openapi_schema["paths"]["/ws"]["websocket"] = {
-        "summary": "Stream audio for transcription",
-        "requestBody": {
-            "content": {
-                "audio/*": {
-                    "example": {"description": "Raw audio bytes (PCM, 16-bit)"}
-                }
-            }
-        },
-        "responses": {
-            "200": {
-                "description": "ASR result in JSON",
-                "content": {
-                    "application/json": {
-                        "example": {"text": "привет мир", "confidence": 0.95}
-                    }
-                }
-            }
-        }
-    }
-    app.openapi_schema = openapi_schema
-    return openapi_schema
+# def custom_openapi():
+#     if app.openapi_schema:
+#         return app.openapi_schema
+#     openapi_schema = get_openapi(
+#         title="ASR Speech Recognition API",
+#         version="1.0.0",
+#         description="Real-time Russian ASR via WebSocket. Send raw audio chunks (16 kHz, mono).",
+#         routes=app.routes,
+#         contact={"email": "Kojevnikov@amulex.ru"},
+#     )
+#     # Добавляем описание для WebSocket endpoint
+#     # FastAPI автоматически генерирует WebSocket документацию, но мы можем улучшить её описание
+#     if "/ws" in openapi_schema.get("paths", {}):
+#         # Удаляем стандартный путь, так как он не подходит для WebSocket
+#         del openapi_schema["paths"]["/ws"]
+#
+#     # Добавляем кастомное описание WebSocket
+#     openapi_schema["paths"]["/ws"] = {
+#         "summary": "WebSocket Stream for Audio Transcription",
+#         "description": "Подключитесь по WebSocket для потоковой передачи аудио. Отправляйте raw audio bytes (PCM, 16-bit, mono, 16kHz). Получайте результаты транскрипции в JSON.",
+#         "servers": [
+#             {"url": "ws://{host}/ws", "description": "WebSocket server"}
+#         ],
+#         "x-postman-collection-name": "ASR WebSocket"
+#     }
+#
+#     app.openapi_schema = openapi_schema
+#     return openapi_schema
 
 
 
 
 try:
     if __name__ == '__main__':
-        app.openapi = custom_openapi
+        # app.openapi = app.openapi_schema
         uvicorn.run(app, host=settings.HOST, port=settings.PORT)
 except KeyboardInterrupt:
     logger.info('\nDone')
