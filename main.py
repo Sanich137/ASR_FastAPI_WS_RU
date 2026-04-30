@@ -1,4 +1,5 @@
-from utils.do_logging import logger
+from Recognizer import Recognizer
+import logging
 import uvicorn
 from config import settings
 import os
@@ -15,6 +16,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 import uuid
+from core.logging_config import setup_logging, request_id_var
 from utils.files_whatcher import start_file_watcher
 from utils.pre_start_init import paths
 import threading
@@ -26,26 +28,38 @@ from models.fast_api_models import ErrorResponse
 import models
 from config import WS_DESCRIPTION
 
+logger = logging.getLogger(__name__)
+
+
 class RequestIDMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
         request.state.request_id = request_id
-        response = await call_next(request)
-        response.headers["X-Request-ID"] = request_id
-        return response
+        token = request_id_var.set(request_id)
+        try:
+            response = await call_next(request)
+            response.headers["X-Request-ID"] = request_id
+            return response
+        finally:
+            request_id_var.reset(token)
 
 
 @asynccontextmanager
 async def lifespan(app):
-    # on_start
-    logger.debug("Приложение FastAPI запущено")
-    
-    # Настройка сборщика мусора.
-    gc.set_threshold(500, 5, 5)
-    
+    # Настройка логирования до любых других операций
+    setup_logging()
+
     # Установка HF_HOME для HuggingFace Hub
     os.environ["HF_HOME"] = settings.HF_HOME
-    
+
+    # on_start
+    logger.debug("Приложение FastAPI запущено")
+
+    # Настройка сборщика мусора.
+    gc.set_threshold(500, 5, 5)
+
+    app.state.recognizer = Recognizer()
+
     if settings.DO_LOCAL_FILE_RECOGNITIONS:
         observer_thread = threading.Thread(
             target=lambda: start_file_watcher(file_path=str(paths.get("local_recognition_folder"))),
@@ -55,6 +69,8 @@ async def lifespan(app):
         logger.info("File watcher started")
 
     yield  # Здесь приложение работает
+    # cleanup (если нужно)
+    del app.state.recognize
 
 
 app = FastAPI(

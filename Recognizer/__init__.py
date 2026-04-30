@@ -1,3 +1,4 @@
+from starlette.requests import HTTPConnection
 import multiprocessing
 import numpy as np
 
@@ -122,4 +123,6 @@ class Recognizer:
         logger.debug(f"Применяется постобработка текста для модели '{self.model_name}'")
         return self._post_processor(*params)
 
-recognizer = Recognizer()
+
+def get_recognizer(conn: HTTPConnection):
+    return conn.app.state.recognizer

@@ -13,6 +13,9 @@ from utils.send_messages import send_messages
 from utils.tokens_to_Result import process_single_token_vocab_output
 from utils.resamppling import async_resample_audiosegment
 
+from fastapi import Depends
+from Recognizer import get_recognizer, Recognizer
+
 from Recognizer.engine.sentensizer import do_sensitizing
 from Recognizer.engine.stream_recognition import simple_recognise
 
@@ -20,7 +23,8 @@ from Recognizer.engine.stream_recognition import simple_recognise
 router = APIRouter()
 
 @router.websocket("/ws")
-async def websocket(ws: WebSocket):
+async def websocket(ws: WebSocket,
+                    recognizer: Recognizer = Depends(get_recognizer)):
     wait_null_answers=True
     client_id = uuid.uuid4()
     logger.debug(f'Принят новый сокет id = {client_id}')
@@ -116,7 +120,7 @@ async def websocket(ws: WebSocket):
                 logger.error(f"AcceptWaveform error - {e} in channel {channel_name}")
             else:
                 try:
-                    asr_result = await simple_recognise(audio_to_asr[client_id][-1])
+                    asr_result = await simple_recognise(audio_to_asr[client_id][-1], recognizer=recognizer)
                     asr_result_words = process_single_token_vocab_output(asr_result, audio_duration[client_id])
                     audio_duration[client_id] += audio_to_asr[client_id][-1].duration_seconds
                     logger.debug(asr_result_words)
@@ -190,7 +194,7 @@ async def websocket(ws: WebSocket):
             last_result = None
             error_description = f"Ошибка дополнения тишиной последнего чанка - {e} in channel {channel_name}"
         else:
-            last_asr_result_w_conf = await simple_recognise(audio_to_asr[client_id][-1])
+            last_asr_result_w_conf = await simple_recognise(audio_to_asr[client_id][-1], recognizer=recognizer)
             last_result = process_single_token_vocab_output(last_asr_result_w_conf, audio_duration[client_id])
             logger.debug(f'Последний результат {last_result.get("data").get("text")} in channel {channel_name}')
 

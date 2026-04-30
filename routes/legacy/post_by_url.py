@@ -6,6 +6,10 @@ from utils.pre_start_init import posted_and_downloaded_audio
 from utils.do_logging import logger
 from utils.get_audio_file import getting_audiofile, open_default_audiofile
 from models.fast_api_models import SyncASRRequest, BaseResponse
+
+from fastapi import Depends
+from Recognizer import get_recognizer, Recognizer
+
 from Recognizer.engine.file_recognition import process_file
 from threading import Lock
 from io import BytesIO
@@ -17,7 +21,9 @@ router = APIRouter()
 audio_lock = Lock()
 
 @router.post("/post_one_step_req", response_model=BaseResponse)
-async def post(params: SyncASRRequest) -> BaseResponse:
+async def post(params: SyncASRRequest,
+                recognizer: Recognizer = Depends(get_recognizer)
+) -> BaseResponse:
     """
     На вход ждёт str(HttpUrl) - прямую ссылку на скачивание файла 'mp3', 'wav' или 'ogg'.\n
     Если на вход передаётся не моно, то ответ будет в несколько элементов списка для каждого канала.\n
@@ -54,7 +60,7 @@ async def post(params: SyncASRRequest) -> BaseResponse:
 
     try:
         # Запускаем обработку в потоке
-        result_dict = await asyncio.to_thread(process_file, posted_and_downloaded_audio[post_id], params)
+        result_dict = await asyncio.to_thread(process_file, posted_and_downloaded_audio[post_id], params, recognizer)
         result = BaseResponse(**result_dict)
     except Exception as e:
         error_description = f"Ошибка обработки в process_file - {e}"

@@ -1,5 +1,5 @@
+from fastapi import Depends
 import time
-
 from pydub import AudioSegment
 from config import settings
 import asyncio
@@ -14,7 +14,6 @@ from utils.pre_start_init import (
 from utils.do_logging import logger
 from utils.chunk_doing import find_last_speech_position
 from utils.resamppling import sync_resample_audiosegment
-from Recognizer import recognizer
 from Recognizer.engine.stream_recognition import simple_recognise, recognise_w_speed_correction, simple_recognise_batch
 from Recognizer.engine.sentensizer import do_sensitizing
 from Recognizer.engine.echoe_clearing import remove_echo
@@ -24,7 +23,7 @@ from threading import Lock
 # Глобальный лок для потокобезопасности
 audio_lock = Lock()
 
-def process_file(tmp_path, params):
+def process_file(tmp_path, params, recognizer):
     process_file_start = time.perf_counter()
     res = False
     diarized = False
@@ -122,7 +121,7 @@ def process_file(tmp_path, params):
 
         if params.use_batch:
             logger.info("Запрошен батчинг")
-            list_asr_result_wo_conf = simple_recognise_batch(audio_to_asr[post_id],params.batch_size)  # --> list
+            list_asr_result_wo_conf = simple_recognise_batch(audio_to_asr[post_id],params.batch_size, recognizer)  # --> list
 
             for _, asr_result_wo_conf in enumerate(list_asr_result_wo_conf):
 
@@ -145,7 +144,7 @@ def process_file(tmp_path, params):
                         params.speech_speed_correction_multiplier = multiplier
                     else:
                         # Производим распознавание
-                        asr_result_wo_conf = asyncio.run(simple_recognise(audio_asr))
+                        asr_result_wo_conf = asyncio.run(simple_recognise(audio_asr, recognizer))
 
                 except Exception as e:
                     logger.error(f"Error ASR audio - {e}")

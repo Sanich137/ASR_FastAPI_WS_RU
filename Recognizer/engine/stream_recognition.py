@@ -1,7 +1,6 @@
 import time
 import numpy as np
 from config import settings
-from Recognizer import recognizer
 from utils.bytes_to_samples_audio import get_np_array_samples_float32
 from utils.resamppling import sync_resample_audiosegment
 from utils.slow_down_audio import do_slow_down_audio
@@ -41,7 +40,7 @@ def calc_speed(data):
     return speech_speed
 
 
-async def simple_recognise(audio_data, ) -> dict:
+async def simple_recognise(audio_data,  recognizer) -> dict:
     # Приводим фреймрейт к фреймрейту модели
     if audio_data.frame_rate != settings.BASE_SAMPLE_RATE:
         audio_data = sync_resample_audiosegment(audio_data, settings.BASE_SAMPLE_RATE)
@@ -86,7 +85,8 @@ async def recognise_w_speed_correction(audio_data, multiplier=float(1.0), can_sl
     return result, speed, multiplier
 
 
-def simple_recognise_batch(list_audio_data: list, batch_size: int = 8) -> list:
+def simple_recognise_batch(list_audio_data: list, batch_size: int = 8, recognizer=None) -> list:
+
     logger.info(f"Выполняется батчинг с размером {batch_size}")
 
     timer_sync_start = time.perf_counter()
