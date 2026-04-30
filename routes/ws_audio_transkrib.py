@@ -85,6 +85,10 @@ async def websocket(ws: WebSocket,
                 chunk = message.get('bytes')
 
                 if audio_format == 'pcm16':
+                    # Проверяем и добавляем недостающие нулевые байты в чанки.
+                    if len(chunk) % 2 != 0:
+                        chunk += bytes(2 - (len(chunk) % 2))
+
                     # Переводим чанк в объект Audiosegment
                     audiosegment_chunk = AudioSegment(
                         chunk,
@@ -92,6 +96,7 @@ async def websocket(ws: WebSocket,
                         sample_width = 2,   # Ширина сэмпла (2 байта для int16)
                         channels = 1        # Количество каналов. По умолчанию - 1, Моно.
                     )
+
                 else:
                     try:
                         buffer = BytesIO(chunk)
@@ -110,7 +115,6 @@ async def websocket(ws: WebSocket,
 
                 if audiosegment_chunk.channels != 1:
                     audiosegment_chunk = audiosegment_chunk.set_channels(1)
-
                 # Копим буфер
                 audio_buffer[client_id] += audiosegment_chunk
 
@@ -118,6 +122,7 @@ async def websocket(ws: WebSocket,
                 if (audio_overlap[client_id]+audio_buffer[client_id]).duration_seconds >= settings.MAX_OVERLAP_DURATION:
                     # Проверяем новый чанк перед объединением (там же режем хвост и добавляем его при необходимости)
                     await find_last_speech_position(client_id, is_last_chunk=False)
+
                 else:
                     continue
             except Exception as e:
