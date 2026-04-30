@@ -1,22 +1,25 @@
 import uuid
 import asyncio
-from fastapi import APIRouter
 from utils.pre_start_init import posted_and_downloaded_audio
-from utils.do_logging import logger
 from utils.get_audio_file import getting_audiofile, open_default_audiofile
 from models.fast_api_models import SyncASRRequest, V1ASRResponse, ASRData, RawData, SentencedData, DiarizedData
 
-from fastapi import Depends
+from fastapi import APIRouter, Depends
 from Recognizer import get_recognizer, Recognizer
+from Punctuation import get_punctuator, SbertPuncCaseOnnx
 
 from Recognizer.engine.file_recognition import process_file
 
+import logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 @router.post("/post_one_step_req", response_model=V1ASRResponse)
 async def post_v1(params: SyncASRRequest,
-                  recognizer: Recognizer = Depends(get_recognizer)) -> V1ASRResponse:
+                  recognizer: Recognizer = Depends(get_recognizer),
+                  punctuator: SbertPuncCaseOnnx = Depends(get_punctuator)
+                  ) -> V1ASRResponse:
     post_id = uuid.uuid4()
     if params.AudioFileUrl:
         res, error_description = await getting_audiofile(params.AudioFileUrl, post_id)

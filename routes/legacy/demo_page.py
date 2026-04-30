@@ -1,9 +1,9 @@
 
 from fastapi import APIRouter, Request
-from utils.do_logging import logger
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-
+import logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 

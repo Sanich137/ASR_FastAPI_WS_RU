@@ -1,9 +1,9 @@
 import numpy as np
 from pydub import AudioSegment
 from utils.bytes_to_samples_audio import get_np_array_samples_float32
-from utils.do_logging import logger
 from scipy.interpolate import CubicSpline
-from pathlib import Path
+import logging
+logger = logging.getLogger(__name__)
 
 async def do_slow_down_audio(audio_segment: AudioSegment, slowdown_rate: float) -> AudioSegment:
     """

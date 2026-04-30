@@ -1,4 +1,3 @@
-from Recognizer import Recognizer
 import logging
 import uvicorn
 from config import settings
@@ -58,7 +57,14 @@ async def lifespan(app):
     # Настройка сборщика мусора.
     gc.set_threshold(500, 5, 5)
 
+    # Инициируем recognizer
+    from Recognizer import Recognizer
     app.state.recognizer = Recognizer()
+
+    # Инициируем punctuator
+    from Punctuation import SbertPuncCaseOnnx
+    app.state.punctuator = SbertPuncCaseOnnx(paths.get("punctuation_model_path"),use_gpu=settings.PUNCTUATE_WITH_GPU)
+
 
     if settings.DO_LOCAL_FILE_RECOGNITIONS:
         observer_thread = threading.Thread(
@@ -69,8 +75,12 @@ async def lifespan(app):
         logger.info("File watcher started")
 
     yield  # Здесь приложение работает
+
     # cleanup (если нужно)
-    del app.state.recognize
+    if hasattr(app.state, "recognizer"):
+        del app.state.recognizer
+    if hasattr(app.state, "punctuator"):
+        del app.state.punctuator
 
 
 app = FastAPI(

@@ -4,6 +4,7 @@ from pydub import AudioSegment
 from config import settings
 import asyncio
 import uuid
+import logging
 from utils.pre_start_init import (
     posted_and_downloaded_audio,
     audio_buffer,
@@ -11,7 +12,7 @@ from utils.pre_start_init import (
     audio_to_asr,
     audio_duration,
 )
-from utils.do_logging import logger
+
 from utils.chunk_doing import find_last_speech_position
 from utils.resamppling import sync_resample_audiosegment
 from Recognizer.engine.stream_recognition import simple_recognise, recognise_w_speed_correction, simple_recognise_batch
@@ -20,10 +21,12 @@ from Recognizer.engine.echoe_clearing import remove_echo
 from Diarisation.diarazer import do_diarizing
 from threading import Lock
 
+logger = logging.getLogger(__name__)
+
 # Глобальный лок для потокобезопасности
 audio_lock = Lock()
 
-def process_file(tmp_path, params, recognizer):
+def process_file(tmp_path, params, recognizer, punctuator):
     process_file_start = time.perf_counter()
     res = False
     diarized = False
@@ -208,9 +211,11 @@ def process_file(tmp_path, params, recognizer):
         data_to_do_sensitizing = result["diarized_data"] if diarized else result["raw_data"]
         try:
             result["sentenced_data"] = asyncio.run(do_sensitizing(
-                input_asr_json=data_to_do_sensitizing, do_punctuation=params.do_punctuation
-                                                                    )
-                                                    )
+                                                    input_asr_json=data_to_do_sensitizing,
+                                                    do_punctuation=params.do_punctuation,
+                                                    punctuator=punctuator
+                                                            )
+                                                        )
         except Exception as e:
             logger.error(f"do_sensitizing - {e}")
             error_description = f"do_sensitizing - {e}"

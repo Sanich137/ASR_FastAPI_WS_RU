@@ -1,9 +1,9 @@
 from config import settings
 from utils.pre_start_init import paths
-from utils.do_logging import logger
 from VoiceActivityDetector import vad
 import requests
-
+import logging
+logger = logging.getLogger(__name__)
 
 if settings.CAN_DIAR:
     if not paths.get("diar_speaker_model_path").exists():

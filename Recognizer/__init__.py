@@ -1,8 +1,8 @@
 from starlette.requests import HTTPConnection
 import multiprocessing
 import numpy as np
+import logging
 
-from utils.do_logging import logger
 from utils import tokens_to_Result
 from . import engine
 from config import settings
@@ -10,6 +10,7 @@ import onnxruntime as ort
 import onnx_asr
 from onnx_asr.loader import PreprocessorRuntimeConfig, OnnxSessionOptions
 
+logger = logging.getLogger(__name__)
 
 TENSORRT_providers = ["TensorrtExecutionProvider", "CUDAExecutionProvider", "CPUExecutionProvider"]
 CUDA_providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]

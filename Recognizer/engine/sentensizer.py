@@ -1,10 +1,10 @@
-from utils.do_logging import logger
 import numpy as np
 import asyncio
 from config import settings
-from Punctuation import sbertpunc
+import logging
+logger = logging.getLogger(__name__)
 
-async def do_sensitizing(input_asr_json: str, do_punctuation: bool = False):
+async def do_sensitizing(input_asr_json: str, do_punctuation: bool = False,  punctuator=None):
     """
     :param do_punctuation: Если True, то производит пунктуацию и капитализацию над собранными в предложения выражения.
     :param input_asr_json: {"channel_{n_channel + 1}":
@@ -64,7 +64,7 @@ async def do_sensitizing(input_asr_json: str, do_punctuation: bool = False):
                     # Обработка случая с одним словом
                     text = words[0].get('word')
                     if do_punctuation:
-                        text = await sbertpunc.punctuate(text)
+                        text = await punctuator.punctuate(text)
 
                     sentence_element.append({
                       "start": start_time,
@@ -108,7 +108,7 @@ async def do_sensitizing(input_asr_json: str, do_punctuation: bool = False):
 
                         else:
                             if do_punctuation:
-                                text = await sbertpunc.punctuate(' '.join(str(word) for word in sentences))
+                                text = await punctuator.punctuate(' '.join(str(word) for word in sentences))
                             else:
                                 text = ' '.join(str(word) for word in sentences)
 
@@ -128,7 +128,7 @@ async def do_sensitizing(input_asr_json: str, do_punctuation: bool = False):
 
                     if do_punctuation:
 
-                        text = await sbertpunc.punctuate(' '.join(str(word) for word in sentences))
+                        text = await punctuator.punctuate(' '.join(str(word) for word in sentences))
                     else:
                         text = ' '.join(str(word) for word in sentences)
 
@@ -143,7 +143,7 @@ async def do_sensitizing(input_asr_json: str, do_punctuation: bool = False):
 
             if do_punctuation:
                 # Тут он текст разделит сам.
-                one_text_only = str(await sbertpunc.punctuate(one_text_only))
+                one_text_only = str(await punctuator.punctuate(one_text_only))
 
             text_only.append(one_text_only)
 

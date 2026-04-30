@@ -1,12 +1,12 @@
 from pydub import AudioSegment
 
 import ujson
+import logging
 from config import settings
 import uuid
 from io import BytesIO
 
 from fastapi import APIRouter, WebSocket
-from utils.do_logging import logger
 from utils.chunk_doing import find_last_speech_position
 from utils.pre_start_init import audio_buffer, audio_overlap, audio_to_asr, audio_duration,ws_collected_asr_res
 from utils.send_messages import send_messages
@@ -18,13 +18,17 @@ from Recognizer import get_recognizer, Recognizer
 
 from Recognizer.engine.sentensizer import do_sensitizing
 from Recognizer.engine.stream_recognition import simple_recognise
-
+from Punctuation import get_punctuator, SbertPuncCaseOnnx
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
 
 @router.websocket("/ws")
 async def websocket(ws: WebSocket,
-                    recognizer: Recognizer = Depends(get_recognizer)):
+                    recognizer: Recognizer = Depends(get_recognizer),
+                    punctuator: SbertPuncCaseOnnx = Depends(get_punctuator),
+                    ):
     wait_null_answers=True
     client_id = uuid.uuid4()
     logger.debug(f'Принят новый сокет id = {client_id}')
@@ -218,7 +222,7 @@ async def websocket(ws: WebSocket,
 
         if do_dialogue:
             try:
-                sentenced_data = await do_sensitizing(ws_collected_asr_res[client_id], do_punctuation)
+                sentenced_data = await do_sensitizing(ws_collected_asr_res[client_id], do_punctuation, punctuator=punctuator)
             except Exception as e:
                 logger.error(f"await do_sensitizing - {e}")
                 error_description = f"do_sensitizing - {e}"

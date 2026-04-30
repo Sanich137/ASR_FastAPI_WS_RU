@@ -13,10 +13,9 @@ from sklearn.cluster import AgglomerativeClustering
 import time
 from umap import UMAP
 from hdbscan import HDBSCAN
-from utils.do_logging import logger
-from utils.pre_start_init import paths
 from utils.resamppling import async_resample_audiosegment
-
+import logging
+logger = logging.getLogger(__name__)
 
 class Diarizer:
     def __init__(self, embedding_model_path: str,

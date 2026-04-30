@@ -4,11 +4,12 @@ from config import settings
 from utils.bytes_to_samples_audio import get_np_array_samples_float32
 from utils.resamppling import sync_resample_audiosegment
 from utils.slow_down_audio import do_slow_down_audio
-from utils.do_logging import logger
+import logging
 from utils.chunk_doing import samples_padding
 from dataclasses import asdict
 from onnx_asr.utils import read_wav_files, pad_list
 
+logger = logging.getLogger(__name__)
 
 def calc_speed(data):
     time_to_speak_tokens = 0

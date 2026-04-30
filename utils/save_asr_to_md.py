@@ -1,14 +1,16 @@
 import json
+import logging
 from datetime import datetime
-from utils.do_logging import logger
 from pathlib import Path
-import config
+from config import settings
+
+logger = logging.getLogger(__name__)
 
 
 async def save_to_file(json_data: json, file_name: Path = None):
     from utils.pre_start_init import paths
 
-    file_extension = "md" if config.HUMAN_FORMAT_MD_FILE else "json"
+    file_extension = "md" if settings.HUMAN_FORMAT_MD_FILE else "json"
     output_folder = paths.get("result_local_recognition_folder")
     local_path = paths.get("local_recognition_folder")  # Получаем корневую папку для отслеживания
 
@@ -34,7 +36,7 @@ async def save_to_file(json_data: json, file_name: Path = None):
         file_path.parent.mkdir(parents=True, exist_ok=True)
 
     # С
-    if config.HUMAN_FORMAT_MD_FILE:
+    if settings.HUMAN_FORMAT_MD_FILE:
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(f"**Дата:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
             try:

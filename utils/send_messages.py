@@ -1,5 +1,5 @@
-from utils.do_logging import logger
-
+import logging
+logger = logging.getLogger(__name__)
 
 async def send_messages(_socket, _channel_name = None, _data=None, _silence=True, _error=None, _last_message=False,
                         _sentenced_data=None):

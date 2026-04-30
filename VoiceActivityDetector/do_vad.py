@@ -1,12 +1,13 @@
 import datetime
 import asyncio
-
+import logging
 import numpy as np
 import onnxruntime as ort
 from pydub import AudioSegment
 from pathlib import Path
 from utils.resamppling import sync_resample_audiosegment
-from utils.do_logging import logger
+
+logger = logging.getLogger(__name__)
 
 
 class SileroVAD:

@@ -1,7 +1,10 @@
 # import trash.test_data
 from typing import List, Dict, Any
 from difflib import SequenceMatcher
-from utils.do_logging import logger
+import logging
+logger = logging.getLogger(__name__)
+
+
 
 def are_words_similar(word1: str, word2: str, similarity_threshold: float = 0.8) -> bool:
     """

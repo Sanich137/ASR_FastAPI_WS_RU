@@ -1,15 +1,15 @@
 from io import BytesIO
 import asyncio
-
+import logging
 from config import settings
 from fastapi import APIRouter, Depends, File, Form, UploadFile
-from utils.do_logging import logger
 from models.fast_api_models import PostFileRequest, BaseResponse
 from Recognizer import get_recognizer, Recognizer
 from Recognizer.engine.file_recognition import process_file
-from threading import Lock
+from Punctuation import get_punctuator, SbertPuncCaseOnnx
 
-
+import logging
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Функция для извлечения параметров из FormData
@@ -45,7 +45,8 @@ def get_file_request(
 async def async_receive_file_legacy(
     file: UploadFile = File(description="Аудиофайл для обработки"),
     params: PostFileRequest = Depends(get_file_request),
-    recognizer: Recognizer = Depends(get_recognizer)
+    recognizer: Recognizer = Depends(get_recognizer),
+    punctuator: SbertPuncCaseOnnx = Depends(get_punctuator)
 ) -> BaseResponse:
     # Сохраняем файл на диск асинхронно
     try:
@@ -65,7 +66,11 @@ async def async_receive_file_legacy(
         logger.info(f"Получен и сохранён файл {file.filename}")
         try:
             # Запускаем обработку в потоке
-            result_dict = await asyncio.to_thread(process_file, buffer, params, recognizer)
+            result_dict = await asyncio.to_thread(process_file,
+                                                  tmp_path=buffer,
+                                                  params=params,
+                                                  recognizer=recognizer,
+                                                  punctuator=punctuator)
             result = BaseResponse(**result_dict)
         except Exception as e:
             error_description = f"Ошибка обработки в process_file - {e}"
