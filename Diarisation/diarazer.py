@@ -1,19 +1,15 @@
 import datetime
-
-from config import settings
 from Diarisation.do_diarize import load_and_preprocess_audio
 from utils.pre_start_init import posted_and_downloaded_audio
 from collections import defaultdict
 import logging
 logger = logging.getLogger(__name__)
 
-if settings.CAN_DIAR:
-    from Diarisation import diarizer
-
 
 async def do_diarizing(
         file_id:str,
         asr_raw_data,
+        diarizer,
         num_speakers:int = -1,
         filter_cutoff:int = 50,
         filter_order:int = 10,

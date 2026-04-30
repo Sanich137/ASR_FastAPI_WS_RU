@@ -1,30 +1,26 @@
 import uuid
 import asyncio
-import os
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from utils.pre_start_init import posted_and_downloaded_audio
 from utils.get_audio_file import getting_audiofile, open_default_audiofile
 from models.fast_api_models import SyncASRRequest, BaseResponse
 
-from fastapi import Depends
 from Recognizer import get_recognizer, Recognizer
-
 from Punctuation import get_punctuator, SbertPuncCaseOnnx
-
 from Recognizer.engine.file_recognition import process_file
-from threading import Lock
-from io import BytesIO
 
+from Diarisation import get_diarizer
+from Diarisation.do_diarize import Diarizer
 
+import logging
+logger = logging.getLogger(__name__)
 router = APIRouter()
-
-# Глобальный лок для потокобезопасности
-audio_lock = Lock()
 
 @router.post("/post_one_step_req", response_model=BaseResponse)
 async def post(params: SyncASRRequest,
                 recognizer: Recognizer = Depends(get_recognizer),
-                punctuator: SbertPuncCaseOnnx = Depends(get_punctuator)
+                punctuator: SbertPuncCaseOnnx = Depends(get_punctuator),
+                diarizer: Diarizer = Depends(get_diarizer)
 ) -> BaseResponse:
     """
     На вход ждёт str(HttpUrl) - прямую ссылку на скачивание файла 'mp3', 'wav' или 'ogg'.\n
@@ -63,10 +59,12 @@ async def post(params: SyncASRRequest,
     try:
         # Запускаем обработку в потоке
         result_dict = await asyncio.to_thread(process_file,
-                                              tmp_path =posted_and_downloaded_audio[post_id],
+                                              tmp_path=posted_and_downloaded_audio[post_id],
                                               params=params,
                                               recognizer=recognizer,
-                                              punctuator=punctuator)
+                                              punctuator=punctuator,
+                                              diarizer=diarizer)
+
         result = BaseResponse(**result_dict)
     except Exception as e:
         error_description = f"Ошибка обработки в process_file - {e}"

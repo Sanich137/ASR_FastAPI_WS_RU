@@ -7,10 +7,14 @@ from Recognizer.engine.file_recognition import process_file
 from Recognizer import get_recognizer, Recognizer
 from Punctuation import get_punctuator, SbertPuncCaseOnnx
 
-import logging
-logger = logging.getLogger(__name__)
+from Diarisation import get_diarizer
+from Diarisation.do_diarize import Diarizer
 
+import logging
+
+logger = logging.getLogger(__name__)
 router = APIRouter()
+
 # Функция для извлечения параметров из FormData
 def get_file_request(
     keep_raw: bool = Form(default=True, description="Сохранять сырые данные."),
@@ -45,9 +49,11 @@ async def async_receive_file(
     file: UploadFile = File(description="Аудиофайл для обработки"),
     params: PostFileRequest = Depends(get_file_request),
     recognizer: Recognizer = Depends(get_recognizer),
-    punctuator: SbertPuncCaseOnnx = Depends(get_punctuator)
-
+    punctuator: SbertPuncCaseOnnx = Depends(get_punctuator),
+    diarizer: Diarizer = Depends(get_diarizer)
 ) -> V1ASRResponse:
+
+
     try:
         buffer = BytesIO(await file.read())
         buffer.seek(0)
@@ -66,7 +72,8 @@ async def async_receive_file(
                                                   tmp_path=buffer,
                                                   params=params,
                                                   recognizer=recognizer,
-                                                  punctuator=punctuator)
+                                                  punctuator=punctuator,
+                                                  diarizer=diarizer)
             return V1ASRResponse(
                 success=result_dict.get('success', True),
                 error_description=result_dict.get('error_description'),

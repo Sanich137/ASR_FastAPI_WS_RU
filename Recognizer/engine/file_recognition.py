@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 # Глобальный лок для потокобезопасности
 audio_lock = Lock()
 
-def process_file(tmp_path, params, recognizer, punctuator):
+def process_file(tmp_path, params, recognizer, punctuator, diarizer):
     process_file_start = time.perf_counter()
     res = False
     diarized = False
@@ -198,7 +198,10 @@ def process_file(tmp_path, params, recognizer, punctuator):
     if params.do_diarization:
         try:
             result["diarized_data"] = asyncio.run(do_diarizing(
-                file_id=str(post_id), asr_raw_data=result["raw_data"], diar_vad_sensity=params.diar_vad_sensity
+                file_id=str(post_id),
+                asr_raw_data=result["raw_data"],
+                diar_vad_sensity=params.diar_vad_sensity,
+                diarizer=diarizer,
             ))
         except Exception as e:
             logger.error(f"do_diarizing - {e}")

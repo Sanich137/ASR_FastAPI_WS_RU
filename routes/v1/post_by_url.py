@@ -6,9 +6,11 @@ from models.fast_api_models import SyncASRRequest, V1ASRResponse, ASRData, RawDa
 
 from fastapi import APIRouter, Depends
 from Recognizer import get_recognizer, Recognizer
-from Punctuation import get_punctuator, SbertPuncCaseOnnx
-
 from Recognizer.engine.file_recognition import process_file
+from Punctuation import get_punctuator, SbertPuncCaseOnnx
+from Diarisation import get_diarizer
+from Diarisation.do_diarize import Diarizer
+
 
 import logging
 logger = logging.getLogger(__name__)
@@ -18,7 +20,8 @@ router = APIRouter()
 @router.post("/post_one_step_req", response_model=V1ASRResponse)
 async def post_v1(params: SyncASRRequest,
                   recognizer: Recognizer = Depends(get_recognizer),
-                  punctuator: SbertPuncCaseOnnx = Depends(get_punctuator)
+                  punctuator: SbertPuncCaseOnnx = Depends(get_punctuator),
+                  diarizer: Diarizer = Depends(get_diarizer)
                   ) -> V1ASRResponse:
     post_id = uuid.uuid4()
     if params.AudioFileUrl:
@@ -35,7 +38,12 @@ async def post_v1(params: SyncASRRequest,
         )
 
     try:
-        result_dict = await asyncio.to_thread(process_file, posted_and_downloaded_audio[post_id], params, recognizer)
+        result_dict = await asyncio.to_thread(process_file,
+                                              tmp_path=posted_and_downloaded_audio[post_id],
+                                              params=params,
+                                              recognizer=recognizer,
+                                              punctuator=punctuator,
+                                              diarizer=diarizer)
         return V1ASRResponse(
             success=result_dict.get('success', True),
             error_description=result_dict.get('error_description'),

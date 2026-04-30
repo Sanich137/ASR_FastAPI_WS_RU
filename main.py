@@ -19,6 +19,7 @@ from core.logging_config import setup_logging, request_id_var
 from utils.files_whatcher import start_file_watcher
 from utils.pre_start_init import paths
 import threading
+from VoiceActivityDetector import vad
 
 from routes.ws_audio_transkrib import router as ws_audio_transkrib_router
 from routes.v1 import router as v1_router
@@ -65,6 +66,23 @@ async def lifespan(app):
     from Punctuation import SbertPuncCaseOnnx
     app.state.punctuator = SbertPuncCaseOnnx(paths.get("punctuation_model_path"),use_gpu=settings.PUNCTUATE_WITH_GPU)
 
+    # Инициируем diarizer
+    if settings.CAN_DIAR:
+        from Diarisation import ensure_diar_model
+        if ensure_diar_model():
+            from Diarisation.do_diarize import Diarizer
+            app.state.diarizer = Diarizer(
+                embedding_model_path=paths.get("diar_speaker_model_path"),
+                vad=vad,  # todo- моежт быть использовать разные VAD для диаризации и разделения на чанки?
+                max_phrase_gap=1,
+                batch_size=settings.DIAR_GPU_BATCH_SIZE,
+                cpu_workers=settings.CPU_WORKERS,
+                use_gpu=settings.DIAR_WITH_GPU
+            )
+            logger.info("Модель диаризации загружена")
+        else:
+            settings.CAN_DIAR = False
+            logger.warning("Диаризация недоступна: модель не найдена и не удалось скачать")
 
     if settings.DO_LOCAL_FILE_RECOGNITIONS:
         observer_thread = threading.Thread(
@@ -81,6 +99,8 @@ async def lifespan(app):
         del app.state.recognizer
     if hasattr(app.state, "punctuator"):
         del app.state.punctuator
+    if hasattr(app.state, "diarizer"):
+        del app.state.diarizer
 
 
 app = FastAPI(

@@ -8,6 +8,9 @@ from Recognizer import get_recognizer, Recognizer
 from Recognizer.engine.file_recognition import process_file
 from Punctuation import get_punctuator, SbertPuncCaseOnnx
 
+from Diarisation import get_diarizer
+from Diarisation.do_diarize import Diarizer
+
 import logging
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -46,7 +49,8 @@ async def async_receive_file_legacy(
     file: UploadFile = File(description="Аудиофайл для обработки"),
     params: PostFileRequest = Depends(get_file_request),
     recognizer: Recognizer = Depends(get_recognizer),
-    punctuator: SbertPuncCaseOnnx = Depends(get_punctuator)
+    punctuator: SbertPuncCaseOnnx = Depends(get_punctuator),
+    diarizer: Diarizer = Depends(get_diarizer)
 ) -> BaseResponse:
     # Сохраняем файл на диск асинхронно
     try:
@@ -70,7 +74,8 @@ async def async_receive_file_legacy(
                                                   tmp_path=buffer,
                                                   params=params,
                                                   recognizer=recognizer,
-                                                  punctuator=punctuator)
+                                                  punctuator=punctuator,
+                                                  diarizer=diarizer)
             result = BaseResponse(**result_dict)
         except Exception as e:
             error_description = f"Ошибка обработки в process_file - {e}"

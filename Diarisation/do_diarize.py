@@ -17,6 +17,7 @@ from utils.resamppling import async_resample_audiosegment
 import logging
 logger = logging.getLogger(__name__)
 
+
 class Diarizer:
     def __init__(self, embedding_model_path: str,
                  vad,
