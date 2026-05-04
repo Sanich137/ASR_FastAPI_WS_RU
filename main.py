@@ -5,17 +5,15 @@ import os
 import gc
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.datastructures import MutableHeaders
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 import uuid
 from core.logging_config import setup_logging, request_id_var
+from core.exception_handlers import register_exception_handlers
 from utils.files_whatcher import start_file_watcher
 from utils.pre_start_init import paths
 import threading
@@ -24,22 +22,34 @@ from VoiceActivityDetector import vad
 from routes.ws_audio_transkrib import router as ws_audio_transkrib_router
 from routes.v1 import router as v1_router
 from routes.legacy import router as legacy_router
-from models.fast_api_models import ErrorResponse
 import models
 from config import WS_DESCRIPTION
 
 logger = logging.getLogger(__name__)
 
 
-class RequestIDMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
+class RequestIDMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request = Request(scope, receive)
         request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
         request.state.request_id = request_id
         token = request_id_var.set(request_id)
+
+        async def send_with_request_id(message):
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(raw=message["headers"])
+                headers["X-Request-ID"] = request_id
+            await send(message)
+
         try:
-            response = await call_next(request)
-            response.headers["X-Request-ID"] = request_id
-            return response
+            await self.app(scope, receive, send_with_request_id)
         finally:
             request_id_var.reset(token)
 
@@ -112,43 +122,6 @@ app = FastAPI(
     description=WS_DESCRIPTION
     )
 
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    return JSONResponse(
-        status_code=422,
-        content=ErrorResponse(
-            success=False,
-            error_description="Validation error",
-            details=str(exc),
-        ).model_dump()
-    )
-
-
-@app.exception_handler(StarletteHTTPException)
-async def http_exception_handler(request: Request, exc: StarletteHTTPException):
-    return JSONResponse(
-        status_code=exc.status_code,
-        content=ErrorResponse(
-            success=False,
-            error_description=exc.detail,
-        ).model_dump()
-    )
-
-
-@app.exception_handler(Exception)
-async def general_exception_handler(request: Request, exc: Exception):
-    import traceback
-    logger.error(f"Unhandled exception: {exc}\n{traceback.format_exc()}")
-    return JSONResponse(
-        status_code=500,
-        content=ErrorResponse(
-            success=False,
-            error_description="Internal server error",
-            details=str(exc),
-        ).model_dump()
-    )
-
-
 # RequestID middleware
 app.add_middleware(RequestIDMiddleware)
 
@@ -176,8 +149,11 @@ app.add_middleware(
 # GZip middleware
 app.add_middleware(
     GZipMiddleware,
-    minimum_size=1000,
+    minimum_size=500
 )
+
+# Exception handlers
+register_exception_handlers(app)
 
 # Static files
 app.mount("/static", StaticFiles(directory="static"), name="static")

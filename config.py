@@ -1,6 +1,6 @@
 import logging
 import os
-from datetime import date
+from datetime import date, timedelta
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, field_validator, model_validator
 
@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     MODEL_NAME: str = "gigaam-v3-ctc"
     # Стрим из астериска отдаёт только 8к
     BASE_SAMPLE_RATE: int = 16000
-    PROVIDER: str = "CUDA"
+    PROVIDER: str = "CPU"
     NUM_THREADS: int = 0
 
     # HuggingFace Hub settings
@@ -104,6 +104,13 @@ class Settings(BaseSettings):
     DELETE_LOCAL_FILE_AFTR_ASR: bool = False
     HUMAN_FORMAT_MD_FILE: bool = False
 
+    # Auth / JWT settings
+    SECRET_KEY: str = Field(default="change-me-in-production-32-chars-long", min_length=32)
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    REFRESH_TOKEN_EXPIRE_MINUTES: int = 10080  # 7 дней
+    BCRYPT_ROUNDS: int = 12
+
     @field_validator(
         'IS_PROD', 'MAKE_MONO', 'USE_BATCH', 'VAD_WITH_GPU',
         'CAN_PUNCTUATE', 'PUNCTUATE_WITH_GPU', 'CAN_DIAR',
@@ -149,6 +156,20 @@ class Settings(BaseSettings):
                 "SECURITY WARNING: CORS_ORIGINS is set to ['*'] in production (IS_PROD=True). "
                 "This is insecure when allow_credentials=True. "
                 "Please specify explicit origins in CORS_ORIGINS."
+            )
+
+        # Валидация SECRET_KEY для production
+        if self.IS_PROD and len(self.SECRET_KEY) < 32:
+            raise ValueError(
+                "SECURITY ERROR: SECRET_KEY must be at least 32 characters long in production (IS_PROD=True). "
+                "Please set a strong SECRET_KEY environment variable."
+            )
+
+        # Warning при использовании дефолтного SECRET_KEY в production
+        if self.IS_PROD and self.SECRET_KEY == "change-me-in-production-32-chars-long":
+            logging.warning(
+                "SECURITY WARNING: Using default SECRET_KEY in production (IS_PROD=True). "
+                "Please set a strong unique SECRET_KEY environment variable."
             )
 
         return self

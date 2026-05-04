@@ -93,22 +93,6 @@ class UserBase(BaseModel):
     is_active: bool = True
 
 
-class Token(BaseModel):
-    """
-    Модель токена доступа.
-    """
-    access_token: str
-    token_type: str = "bearer"
-
-
-class TokenPayload(BaseModel):
-    """
-    Полезная нагрузка JWT-токена.
-    """
-    sub: Optional[str] = None
-    exp: Optional[int] = None
-
-
 class SyncASRRequest(BaseModel):
     """
     :parameter keep_raw: - Если False, то запрос вернёт только пост-обработанные данные do_punctuation и do_dialogue.

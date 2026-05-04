@@ -50,3 +50,7 @@ hf_xet
 onnxruntime
 
 starlette
+
+# For Auth / JWT
+pyjwt~=2.10.1
+bcrypt~=4.3.0

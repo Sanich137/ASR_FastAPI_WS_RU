@@ -69,14 +69,14 @@ def process_file(tmp_path, params, recognizer, punctuator, diarizer):
         return result
 
     # Приводим фреймрейт к фреймрейту модели
-    print(f"Начало проверки фреймрейта {(time.perf_counter()-process_file_start):.4f} сек.")
+    logger.debug(f"Начало проверки фреймрейта {(time.perf_counter()-process_file_start):.4f} сек.")
     try:
         with audio_lock:
             if posted_and_downloaded_audio[post_id].frame_rate != settings.BASE_SAMPLE_RATE:
                 posted_and_downloaded_audio[post_id] = sync_resample_audiosegment(
                                                                         audio_data=posted_and_downloaded_audio[post_id],
                                                                         target_sample_rate=settings.BASE_SAMPLE_RATE)
-                print(f"Корректировка фреймрейта {(time.perf_counter() - process_file_start):.4f} сек.")
+                logger.debug(f"Корректировка фреймрейта {(time.perf_counter() - process_file_start):.4f} сек.")
     except KeyError as e_key:
         error_description = f"Ошибка обращения по ключу {post_id} при изменения фреймрейта - {e_key}"
         logger.error(error_description)
