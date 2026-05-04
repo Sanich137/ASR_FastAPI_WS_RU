@@ -111,6 +111,9 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 10080  # 7 дней
     BCRYPT_ROUNDS: int = 12
 
+    # Quota settings
+    GUEST_DAILY_QUOTA: int = 10
+
     @field_validator(
         'IS_PROD', 'MAKE_MONO', 'USE_BATCH', 'VAD_WITH_GPU',
         'CAN_PUNCTUATE', 'PUNCTUATE_WITH_GPU', 'CAN_DIAR',

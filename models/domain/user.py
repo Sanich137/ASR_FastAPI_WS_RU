@@ -4,6 +4,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from config import settings
 from models.enums import Role, SubscriptionType
 from models.domain.billing import Subscription
 
@@ -15,7 +16,11 @@ class User(BaseModel):
     hashed_password: Optional[str] = None
     role: Role = Role.user
     is_active: bool = True
-    daily_quota: int = Field(default=10, ge=0, description="Дневная квота запросов")
+    daily_quota: int = Field(
+        default=settings.GUEST_DAILY_QUOTA,
+        ge=0,
+        description="Дневная квота запросов"
+    )
     quota_used_today: int = Field(default=0, ge=0, description="Использовано сегодня")
     subscription_type: Optional[SubscriptionType] = None
     subscription_expires: Optional[datetime] = None
