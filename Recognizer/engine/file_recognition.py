@@ -141,9 +141,12 @@ def process_file(tmp_path, params, recognizer, punctuator, diarizer):
                     # Снижаем скорость аудио по необходимости
                     if params.do_auto_speech_speed_correction or params.speech_speed_correction_multiplier != 1:
                         logger.debug("Будут использованы механизмы анализа скорости речи и замедления аудио")
-                        asr_result_wo_conf, speed, multiplier = asyncio.run(recognise_w_speed_correction(audio_asr,
+                        asr_result_wo_conf, speed, multiplier = asyncio.run(recognise_w_speed_correction(
+                                                                            audio_data=audio_asr,
                                                                             can_slow_down=True,
-                                                                            multiplier=params.speech_speed_correction_multiplier))
+                                                                            multiplier=params.speech_speed_correction_multiplier,
+                                                                            recognizer=recognizer)
+                                                                            )
                         params.speech_speed_correction_multiplier = multiplier
                     else:
                         # Производим распознавание

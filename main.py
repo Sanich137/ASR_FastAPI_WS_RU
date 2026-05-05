@@ -20,8 +20,8 @@ import threading
 from VoiceActivityDetector import vad
 
 from routes.ws_audio_transkrib import router as ws_audio_transkrib_router
-from routes.v1 import router as v1_router
-from routes.legacy import router as legacy_router
+from api.legacy import router as legacy_router
+from api.v1.api import router as api_v1_router
 import models
 from config import WS_DESCRIPTION
 
@@ -161,7 +161,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # Routers
 app.include_router(ws_audio_transkrib_router, tags=["legacy"])
 app.include_router(legacy_router, tags=["legacy"])
-app.include_router(v1_router, tags=["v1"])
+app.include_router(api_v1_router, tags=["api/v1"])
 
 try:
     if __name__ == '__main__':

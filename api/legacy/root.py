@@ -22,4 +22,3 @@ async def root():
                   "/demo": "DEMO UI page"
               },
               "try_addr": f"http://{settings.HOST}:{settings.PORT}/docs"}
-

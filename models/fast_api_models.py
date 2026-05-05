@@ -1,4 +1,4 @@
-from pydantic import BaseModel, HttpUrl, Field, ConfigDict
+from pydantic import BaseModel, HttpUrl, Field, ConfigDict, RootModel
 from typing import Union, Annotated, Optional, Any, List, Dict
 from fastapi import UploadFile
 
@@ -23,13 +23,11 @@ class V1BaseResponse(BaseModel):
     """
     success: bool = True
     error_description: Optional[str] = None
-    data: dict = {}
+    data: Any = {}
 
 
-class RawData(BaseModel):
-    """Структура сырых данных ASR."""
-    result: Optional[List[Dict[str, Any]]] = None
-    text: Optional[str] = None
+class RawData(RootModel[Dict[str, Any]]):
+    """Структура сырых данных ASR. Словарь каналов, где каждый канал — список результатов."""
 
 
 class SentencedData(BaseModel):

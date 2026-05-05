@@ -54,10 +54,11 @@ async def simple_recognise(audio_data,  recognizer) -> dict:
 
 
 async def recognise_w_speed_correction(audio_data, multiplier=float(1.0), can_slow_down = False,
-                                       ) -> tuple:
+                                       recognizer = None) -> tuple:
     """
     Распознавание чанка с возможностью контроля быстрой речи.
 
+    :param recognizer: Обязательно получить класс модели распознавания.
     :param multiplier: Float
     :param can_slow_down: Boolean
     :param audio_data: Аудиоданные в формате Audiosegment (puDub).
@@ -71,7 +72,7 @@ async def recognise_w_speed_correction(audio_data, multiplier=float(1.0), can_sl
 
 
     # Парсим результат
-    result = await simple_recognise(audio_data)
+    result = await simple_recognise(audio_data, recognizer)
 
     if can_slow_down and multiplier == 1:
         speed = calc_speed(result)

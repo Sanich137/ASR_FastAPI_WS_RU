@@ -6,30 +6,29 @@ from config import settings
 import uuid
 from io import BytesIO
 
-from fastapi import APIRouter, WebSocket
+from fastapi import APIRouter, WebSocket, Depends
 from utils.chunk_doing import find_last_speech_position
-from utils.pre_start_init import audio_buffer, audio_overlap, audio_to_asr, audio_duration,ws_collected_asr_res
+from utils.pre_start_init import audio_buffer, audio_overlap, audio_to_asr, audio_duration, ws_collected_asr_res
 from utils.send_messages import send_messages
 from utils.tokens_to_Result import process_single_token_vocab_output
 from utils.resamppling import async_resample_audiosegment
 
-from fastapi import Depends
 from Recognizer import get_recognizer, Recognizer
-
 from Recognizer.engine.sentensizer import do_sensitizing
 from Recognizer.engine.stream_recognition import simple_recognise
 from Punctuation import get_punctuator, SbertPuncCaseOnnx
 
-router = APIRouter()
+router = APIRouter(prefix="/asr", tags=["ASR"])
 logger = logging.getLogger(__name__)
 
 
 @router.websocket("/ws")
-async def websocket(ws: WebSocket,
-                    recognizer: Recognizer = Depends(get_recognizer),
-                    punctuator: SbertPuncCaseOnnx = Depends(get_punctuator),
-                    ):
-    wait_null_answers=True
+async def websocket(
+    ws: WebSocket,
+    recognizer: Recognizer = Depends(get_recognizer),
+    punctuator: SbertPuncCaseOnnx = Depends(get_punctuator),
+):
+    wait_null_answers = True
     client_id = uuid.uuid4()
     logger.debug(f'Принят новый сокет id = {client_id}')
     audio_buffer[client_id] = AudioSegment.silent(1, frame_rate=settings.BASE_SAMPLE_RATE)
@@ -40,7 +39,7 @@ async def websocket(ws: WebSocket,
     do_dialogue = False
     do_punctuation = False
     audio_format = 'raw'
-    sample_rate = settings.BASE_SAMPLE_RATE  # Если не получен фреймрейт в конфиге сокета, по попытается принять с конфигом модели.
+    sample_rate = settings.BASE_SAMPLE_RATE
     sentenced_data = None
     error_description = None
 
@@ -81,27 +80,23 @@ async def websocket(ws: WebSocket,
                 logger.error(f'Error text message compiling. Message:{message} - error:{e} in channel {channel_name}')
         elif isinstance(message, dict) and message.get('bytes'):
             try:
-                # Получаем новый чанк с данными
                 chunk = message.get('bytes')
 
                 if audio_format == 'pcm16':
-                    # Проверяем и добавляем недостающие нулевые байты в чанки.
                     if len(chunk) % 2 != 0:
                         chunk += bytes(2 - (len(chunk) % 2))
 
-                    # Переводим чанк в объект Audiosegment
                     audiosegment_chunk = AudioSegment(
                         chunk,
-                        frame_rate = sample_rate,  # Частота дискретизации
-                        sample_width = 2,   # Ширина сэмпла (2 байта для int16)
-                        channels = 1        # Количество каналов. По умолчанию - 1, Моно.
+                        frame_rate=sample_rate,
+                        sample_width=2,
+                        channels=1
                     )
 
                 else:
                     try:
                         buffer = BytesIO(chunk)
                         buffer.seek(0)
-                        # buffer.write()
                         audiosegment_chunk = AudioSegment.from_file(buffer)
 
                     except Exception as e:
@@ -109,18 +104,14 @@ async def websocket(ws: WebSocket,
                     else:
                         logger.debug(f"Чанк принят и распознан in channel {channel_name}")
 
-                # Приводим фреймрейт к фреймрейту модели
                 if audiosegment_chunk.frame_rate != settings.BASE_SAMPLE_RATE:
                     audiosegment_chunk = await async_resample_audiosegment(audiosegment_chunk, settings.BASE_SAMPLE_RATE)
 
                 if audiosegment_chunk.channels != 1:
                     audiosegment_chunk = audiosegment_chunk.set_channels(1)
-                # Копим буфер
                 audio_buffer[client_id] += audiosegment_chunk
 
-                # Накопили больше нормы
-                if (audio_overlap[client_id]+audio_buffer[client_id]).duration_seconds >= settings.MAX_OVERLAP_DURATION:
-                    # Проверяем новый чанк перед объединением (там же режем хвост и добавляем его при необходимости)
+                if (audio_overlap[client_id] + audio_buffer[client_id]).duration_seconds >= settings.MAX_OVERLAP_DURATION:
                     await find_last_speech_position(client_id, is_last_chunk=False)
 
                 else:
@@ -134,7 +125,6 @@ async def websocket(ws: WebSocket,
                     audio_duration[client_id] += audio_to_asr[client_id][-1].duration_seconds
                     logger.debug(asr_result_words)
 
-                    # Копим ответы для пунктуации
                     ws_collected_asr_res[client_id][f"channel_{1}"].append(asr_result_words)
 
                 except Exception as e:
@@ -142,7 +132,7 @@ async def websocket(ws: WebSocket,
                 else:
                     if len(asr_result_words.get("data").get("text")) == 0 or asr_result_words.get("data").get("text") == ' ':
                         if wait_null_answers:
-                            if not await send_messages(ws, _silence = True, _data = None, _error = None, _channel_name=channel_name):
+                            if not await send_messages(ws, _silence=True, _data=None, _error=None, _channel_name=channel_name):
                                 logger.error(f"send_message not ok work canceled")
                                 try:
                                     del audio_overlap[client_id]
@@ -153,12 +143,11 @@ async def websocket(ws: WebSocket,
                                 except Exception as e:
                                     logger.error(f"error clearing globals after abnormal closing socket - {e}")
                                 return
-                            # await asyncio.sleep(0.01)
                         else:
                             logger.debug("sending silence partials skipped")
                             continue
                     else:
-                        if not await send_messages(ws, _silence=False, _data=asr_result_words, _error=None, _channel_name = channel_name):
+                        if not await send_messages(ws, _silence=False, _data=asr_result_words, _error=None, _channel_name=channel_name):
                             logger.error(f"send_message not ok work canceled")
                             try:
                                 del audio_overlap[client_id]
@@ -189,8 +178,6 @@ async def websocket(ws: WebSocket,
                     logger.error(f"error clearing globals after abnormal closing socket - {e} in channel {channel_name}")
                 return
 
-    # Передаём на распознавание собранный не полный буфер
-    # перевод в семплы для распознавания.
     audio_to_asr[client_id].append(audio_overlap[client_id] + audio_buffer[client_id])
     logger.debug(f'итоговое сообщение - {audio_to_asr[client_id][-1].duration_seconds} секунд')
 
@@ -207,9 +194,7 @@ async def websocket(ws: WebSocket,
             last_result = process_single_token_vocab_output(last_asr_result_w_conf, audio_duration[client_id])
             logger.debug(f'Последний результат {last_result.get("data").get("text")} in channel {channel_name}')
 
-            # Добавляем ответ для пунктуации
             ws_collected_asr_res[client_id][f"channel_{1}"].append(last_result)
-
 
     except Exception as e:
         logger.error(f"last_asr_result_w_conf error - {e}")
@@ -232,7 +217,6 @@ async def websocket(ws: WebSocket,
                 logger.error(f"await do_sensitizing - {e}")
                 error_description = f"do_sensitizing - {e}"
 
-        #
         if not await send_messages(ws, _silence=is_silence, _data=last_result, _error=error_description, _last_message=True,
                                    _sentenced_data=sentenced_data, _channel_name=channel_name):
             logger.error(f"send_message not ok work canceled in channel {channel_name}")

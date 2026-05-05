@@ -1,8 +1,9 @@
 from io import BytesIO
 import asyncio
+import logging
 from config import settings
 from fastapi import APIRouter, Depends, File, Form, UploadFile
-from models.fast_api_models import PostFileRequest, V1ASRResponse, ASRData, RawData, SentencedData, DiarizedData
+from models.fast_api_models import PostFileRequest, V1BaseResponse, ASRData, RawData, SentencedData, DiarizedData
 from Recognizer.engine.file_recognition import process_file
 from Recognizer import get_recognizer, Recognizer
 from Punctuation import get_punctuator, SbertPuncCaseOnnx
@@ -10,10 +11,9 @@ from Punctuation import get_punctuator, SbertPuncCaseOnnx
 from Diarisation import get_diarizer
 from Diarisation.do_diarize import Diarizer
 
-import logging
-
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(prefix="/asr", tags=["ASR"])
+
 
 # Функция для извлечения параметров из FormData
 def get_file_request(
@@ -39,28 +39,26 @@ def get_file_request(
         diar_vad_sensity=diar_vad_sensity,
         batch_size=batch_size,
         make_mono=make_mono,
-        do_auto_speech_speed_correction = do_auto_speech_speed_correction,
-        speech_speed_correction_multiplier = speech_speed_correction_multiplier
+        do_auto_speech_speed_correction=do_auto_speech_speed_correction,
+        speech_speed_correction_multiplier=speech_speed_correction_multiplier
     )
 
 
-@router.post("/post_file", response_model=V1ASRResponse)
+@router.post("/file", response_model=V1BaseResponse)
 async def async_receive_file(
     file: UploadFile = File(description="Аудиофайл для обработки"),
     params: PostFileRequest = Depends(get_file_request),
     recognizer: Recognizer = Depends(get_recognizer),
     punctuator: SbertPuncCaseOnnx = Depends(get_punctuator),
     diarizer: Diarizer = Depends(get_diarizer)
-) -> V1ASRResponse:
-
-
+) -> V1BaseResponse:
     try:
         buffer = BytesIO(await file.read())
         buffer.seek(0)
     except Exception as e:
         error_description = f"Не удалось сохранить файл для распознавания: {file.filename}, размер файла: {file.size}, по причине: {e}"
         logger.error(error_description)
-        return V1ASRResponse(
+        return V1BaseResponse(
             success=False,
             error_description=error_description,
             data=ASRData()
@@ -68,17 +66,19 @@ async def async_receive_file(
     else:
         logger.info(f"Получен и сохранён файл {file.filename}")
         try:
-            result_dict = await asyncio.to_thread(process_file,
-                                                  tmp_path=buffer,
-                                                  params=params,
-                                                  recognizer=recognizer,
-                                                  punctuator=punctuator,
-                                                  diarizer=diarizer)
-            return V1ASRResponse(
+            result_dict = await asyncio.to_thread(
+                process_file,
+                tmp_path=buffer,
+                params=params,
+                recognizer=recognizer,
+                punctuator=punctuator,
+                diarizer=diarizer
+            )
+            return V1BaseResponse(
                 success=result_dict.get('success', True),
                 error_description=result_dict.get('error_description'),
                 data=ASRData(
-                    raw_data=RawData(**result_dict.get('raw_data', {})) if result_dict.get('raw_data') else None,
+                    raw_data=RawData.model_validate(result_dict.get('raw_data', {})) if result_dict.get('raw_data') else None,
                     sentenced_data=SentencedData(**result_dict.get('sentenced_data', {})) if result_dict.get('sentenced_data') else None,
                     diarized_data=DiarizedData(**result_dict.get('diarized_data', {})) if result_dict.get('diarized_data') else None
                 )
@@ -86,7 +86,7 @@ async def async_receive_file(
         except Exception as e:
             error_description = f"Ошибка обработки в process_file - {e}"
             logger.error(error_description)
-            return V1ASRResponse(
+            return V1BaseResponse(
                 success=False,
                 error_description=str(error_description),
                 data=ASRData()

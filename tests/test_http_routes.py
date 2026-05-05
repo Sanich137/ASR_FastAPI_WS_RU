@@ -7,7 +7,7 @@ import pytest
 from config import settings
 from models.fast_api_models import V1BaseResponse as BaseResponse
 
-BASE_URL = f"http://127.0.0.1:{settings.PORT}/v1"
+BASE_URL = f"http://127.0.0.1:{settings.PORT}/api/v1"
 
 
 async def _assert_base_response(body: dict, expect_success: bool):
@@ -27,7 +27,7 @@ async def test_post_by_url_success():
         }
         try:
             resp = await client.post(
-                f"{BASE_URL}/post_one_step_req", json=payload, timeout=120.0
+                f"{BASE_URL}/asr/url", json=payload, timeout=120.0
             )
         except httpx.ConnectError:
             pytest.fail(f"Сервер не отвечает по адресу {BASE_URL}. Убедитесь, что приложение запущено.")
@@ -46,7 +46,7 @@ async def test_post_by_url_validation_error():
         payload = {"keep_raw": True}  # отсутствует AudioFileUrl
         try:
             resp = await client.post(
-                f"{BASE_URL}/post_one_step_req", json=payload, timeout=10.0
+                f"{BASE_URL}/asr/url", json=payload, timeout=10.0
             )
         except httpx.ConnectError:
             pytest.fail(f"Сервер не отвечает по адресу {BASE_URL}. Убедитесь, что приложение запущено.")
@@ -75,7 +75,7 @@ async def test_post_by_file_success():
             }
             try:
                 resp = await client.post(
-                    f"{BASE_URL}/post_file", data=data, files=files, timeout=20.0
+                    f"{BASE_URL}/asr/file", data=data, files=files, timeout=20.0
                 )
             except httpx.ConnectError:
                 pytest.fail(f"Сервер не отвечает по адресу {BASE_URL}. Убедитесь, что приложение запущено.")
@@ -94,7 +94,7 @@ async def test_post_by_file_validation_error():
         data = {"keep_raw": "true"}
         try:
             resp = await client.post(
-                f"{BASE_URL}/post_file", data=data, timeout=10.0
+                f"{BASE_URL}/asr/file", data=data, timeout=10.0
             )
         except httpx.ConnectError:
             pytest.fail(f"Сервер не отвечает по адресу {BASE_URL}. Убедитесь, что приложение запущено.")

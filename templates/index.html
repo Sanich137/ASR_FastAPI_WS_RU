@@ -194,7 +194,7 @@
 
         serverResponses.innerHTML = '<p>Загрузка...</p>';
 
-        fetch('/post_one_step_req', {
+        fetch('/api/v1/asr/url', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -255,7 +255,7 @@
     async function sendChannel(arrayBuffer, channel, numChannels, chunkSize, sampleRate) {
         return new Promise((resolve, reject) => {
             const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
+            const wsUrl = `${wsProtocol}//${window.location.host}/api/v1/asr/ws`;
             const socket = new WebSocket(wsUrl);
 
             const doDialogue = document.getElementById('ws_do_dialogue').checked;
@@ -367,7 +367,7 @@
 
         try {
             serverResponses.innerHTML = '<p>Загрузка...</p>';
-            const response = await fetch('/post_file', {
+            const response = await fetch('/api/v1/asr/file', {
                 method: 'POST',
                 body: formData
             });
