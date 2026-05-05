@@ -11,7 +11,6 @@ from Punctuation import get_punctuator, SbertPuncCaseOnnx
 from Diarisation import get_diarizer
 from Diarisation.do_diarize import Diarizer
 
-import logging
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
@@ -52,6 +51,9 @@ async def async_receive_file_legacy(
     punctuator: SbertPuncCaseOnnx = Depends(get_punctuator),
     diarizer: Diarizer = Depends(get_diarizer)
 ) -> BaseResponse:
+    logger.warning(
+        "Legacy endpoint /post_file is deprecated. Use /api/v1/asr/file instead.",
+    )
     # Сохраняем файл на диск асинхронно
     try:
         buffer = BytesIO(await file.read())

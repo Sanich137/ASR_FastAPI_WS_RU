@@ -39,6 +39,10 @@ async def post(params: SyncASRRequest,
     :param:batch_size: Union[int, None] = Размер пакета для обработки. \n
     """
 
+    logger.warning(
+        "Legacy endpoint /post_one_step_req is deprecated. Use /api/v1/asr/url instead.",
+    )
+
     # Получаем файл
     post_id = uuid.uuid4()
     if params.AudioFileUrl:

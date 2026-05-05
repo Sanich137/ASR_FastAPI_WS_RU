@@ -1,7 +1,9 @@
+import logging
 from fastapi import APIRouter
 from models.fast_api_models import V1BaseResponse
 from config import settings
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/")
@@ -12,6 +14,9 @@ async def root():
     Returns:
         V1BaseResponse: базовый ответ с приветственным сообщением.
     """
+    logger.warning(
+        "Legacy endpoint / is deprecated. Use /api/v1/ instead.",
+    )
     return {"message": "No_service_selected",
               "available_endpoints": {
                   "POST v1/post_one_step_req": "ASR by URL",

@@ -46,12 +46,35 @@ class RequestIDMiddleware:
             if message["type"] == "http.response.start":
                 headers = MutableHeaders(raw=message["headers"])
                 headers["X-Request-ID"] = request_id
+                message["headers"] = headers.raw
             await send(message)
 
         try:
             await self.app(scope, receive, send_with_request_id)
         finally:
             request_id_var.reset(token)
+
+
+class DeprecationHeaderMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_deprecation(message):
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(raw=message["headers"])
+                path = scope.get("path", "")
+                if path in {"/root/", "/root/demo", "/root/is_alive", "/root/post_file", "/root/post_one_step_req", "/root/ws"}:
+                    headers["Deprecation"] = "true"
+                    headers["Warning"] = f'299 - "Legacy API is deprecated. Use /api/v1/ instead."'
+                message["headers"] = headers.raw
+            await send(message)
+
+        await self.app(scope, receive, send_with_deprecation)
 
 
 @asynccontextmanager
@@ -122,8 +145,17 @@ app = FastAPI(
     description=WS_DESCRIPTION
     )
 
+# Deprecation warning for legacy endpoints at startup
+logger.warning(
+    "Legacy endpoints (/ws, /post_file, /post_one_step_req, /is_alive, /demo, /) are deprecated. "
+    "Use /api/v1/ instead.",
+)
+
 # RequestID middleware
 app.add_middleware(RequestIDMiddleware)
+
+# Deprecation header middleware for legacy endpoints
+app.add_middleware(DeprecationHeaderMiddleware)
 
 # ProxyHeaders middleware
 app.add_middleware(

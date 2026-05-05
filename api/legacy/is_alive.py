@@ -3,7 +3,7 @@ import logging
 import pynvml
 from utils.pre_start_init import audio_to_asr
 
-
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 def get_gpu_free_memory():
@@ -25,6 +25,9 @@ def get_gpu_free_memory():
 
 @router.get("/is_alive")
 async def check_if_service_is_alive():
+    logger.warning(
+        "Legacy endpoint /is_alive is deprecated. Use /api/v1/health/is_alive instead.",
+    )
     error_description = None
     logging.info('GET_is_alive')
     tasks_in_work = len(audio_to_asr)
