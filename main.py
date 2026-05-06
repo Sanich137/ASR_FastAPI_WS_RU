@@ -1,4 +1,5 @@
 import logging
+import time
 import uvicorn
 from config import settings
 import os
@@ -87,6 +88,7 @@ async def lifespan(app):
 
     # on_start
     logger.debug("Приложение FastAPI запущено")
+    app.state.start_time = time.time()
 
     # Настройка сборщика мусора.
     gc.set_threshold(500, 5, 5)

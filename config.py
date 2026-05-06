@@ -114,6 +114,17 @@ class Settings(BaseSettings):
     # Quota settings
     GUEST_DAILY_QUOTA: int = 10
 
+    # WebSocket settings
+    WS_MAX_CONNECTIONS: int = 100
+    WS_MAX_BUFFER_DURATION_SEC: float = 300.0
+    WS_IDLE_TIMEOUT_SEC: float = 60.0
+    WS_PING_TIMEOUT_SEC: float = 20.0
+    WS_MAX_MESSAGE_SIZE_MB: float = 10.0
+    WS_MAX_SESSION_DURATION_SEC: float = 300.0
+    WS_STATUS_BROADCAST_INTERVAL_SEC: float = 5.0
+    WS_STATUS_GPU_OVERLOAD_THRESHOLD_PCT: float = 90.0
+    WS_STATUS_BUSY_CONNECTIONS_THRESHOLD_PCT: float = 80.0
+
     @field_validator(
         'IS_PROD', 'MAKE_MONO', 'USE_BATCH', 'VAD_WITH_GPU',
         'CAN_PUNCTUATE', 'PUNCTUATE_WITH_GPU', 'CAN_DIAR',
@@ -218,15 +229,21 @@ WS_DESCRIPTION = """
     }
 ```
 
-### Пример передачи данных.
+### Пример передачи данных (JSON + base64)
 
-Периодически отправляйте raw_audio_data - PCM, 16-bit, mono
+Используется при `audio_transport: "json_base64"` (по умолчанию):
 
 ```json
     {
-        "bytes": binary
+        "type": "audio_chunk",
+        "audio_base64": "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=",
+        "seq_num": 0
     }
 ```
+
+### Пример передачи данных (Binary)
+
+Используется при `audio_transport: "binary"`. Отправляйте WebSocket **binary frame** напрямую (без JSON-обёртки). Сервер читает его через `receive_bytes()`.
 
 ### Пример EOF
 

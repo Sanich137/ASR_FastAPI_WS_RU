@@ -20,6 +20,8 @@ from Recognizer.engine.sentensizer import do_sensitizing
 from Recognizer.engine.stream_recognition import simple_recognise
 from Punctuation import get_punctuator, SbertPuncCaseOnnx
 
+#Todo Этот роут должен умереть.
+
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
