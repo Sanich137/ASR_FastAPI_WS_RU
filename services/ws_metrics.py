@@ -61,20 +61,40 @@ class SystemMetricsCollector:
             logger.warning("Failed to get GPU stats: %s", exc)
             return None, None
 
-    def get_cpu_stats(self) -> Tuple[Optional[int], Optional[int]]:
+    def get_cpu_stats(self) -> Tuple[Optional[int], Optional[int], Optional[float]]:
         """
-        Возвращает свободную и общую память RAM в мегабайтах.
+        Возвращает свободную и общую память RAM в мегабайтах и загрузку CPU в процентах.
 
         Returns:
-            Кортеж (free_mb, total_mb). Если psutil недоступен — (None, None).
+            Кортеж (free_mb, total_mb, cpu_percent). Если psutil недоступен — (None, None, None).
         """
         try:
             import psutil
             mem = psutil.virtual_memory()
             free_mb = int(mem.available / 1024 / 1024)
             total_mb = int(mem.total / 1024 / 1024)
-            return free_mb, total_mb
+            cpu_percent = psutil.cpu_percent(interval=None)
+            return free_mb, total_mb, cpu_percent
         except Exception:
+            return None, None, None
+
+    def get_gpu_utilization(self) -> Tuple[Optional[float], Optional[float]]:
+        """
+        Возвращает загрузку GPU (utilization) и температуру в градусах Цельсия.
+
+        Returns:
+            Кортеж (gpu_utilization_percent, temperature_celsius). Если pynvml недоступен — (None, None).
+        """
+        if self._nvml_handle is None:
+            return None, None
+        try:
+            import pynvml
+            utilization = pynvml.nvmlDeviceGetUtilizationRates(self._nvml_handle)
+            gpu_util = float(utilization.gpu)
+            temperature = pynvml.nvmlDeviceGetTemperature(self._nvml_handle, pynvml.NVML_TEMPERATURE_GPU)
+            return gpu_util, float(temperature)
+        except Exception as exc:
+            logger.warning("Failed to get GPU utilization: %s", exc)
             return None, None
 
     def increment_tasks(self) -> None:
@@ -108,6 +128,7 @@ class SystemMetricsCollector:
 
         Пороги берутся из конфигурации:
         - GPU memory usage > WS_STATUS_GPU_OVERLOAD_THRESHOLD_PCT -> overloaded.
+        - GPU utilization > WS_STATUS_GPU_OVERLOAD_THRESHOLD_PCT -> overloaded.
         - active_connections / max_connections > WS_STATUS_BUSY_CONNECTIONS_THRESHOLD_PCT -> busy.
 
         Args:
@@ -118,10 +139,18 @@ class SystemMetricsCollector:
             Строка-статус: "idle", "busy" или "overloaded".
         """
         gpu_free, gpu_total = self.get_gpu_stats()
+        gpu_util, _ = self.get_gpu_utilization()
+
+        # Overloaded по памяти или utilization GPU
         if gpu_total and gpu_total > 0:
             gpu_used_pct = (gpu_total - gpu_free) / gpu_total * 100
-            threshold = getattr(settings, "WS_STATUS_GPU_OVERLOAD_THRESHOLD_PCT", 90.0)
-            if gpu_used_pct >= threshold:
+            mem_threshold = getattr(settings, "WS_STATUS_GPU_OVERLOAD_THRESHOLD_PCT", 90.0)
+            if gpu_used_pct >= mem_threshold:
+                return "overloaded"
+
+        if gpu_util is not None:
+            util_threshold = getattr(settings, "WS_STATUS_GPU_OVERLOAD_THRESHOLD_PCT", 90.0)
+            if gpu_util >= util_threshold:
                 return "overloaded"
 
         if max_connections > 0:
@@ -151,7 +180,8 @@ class SystemMetricsCollector:
             WSStatusResponse с актуальными метриками.
         """
         gpu_free, gpu_total = self.get_gpu_stats()
-        cpu_free, cpu_total = self.get_cpu_stats()
+        gpu_util, gpu_temp = self.get_gpu_utilization()
+        cpu_free, cpu_total, cpu_util = self.get_cpu_stats()
         uptime = time.time() - self.start_time
 
         status = self.get_adapter_status(active_connections, max_connections)
@@ -160,10 +190,13 @@ class SystemMetricsCollector:
             adapter_status=status,
             gpu_memory_free_mb=gpu_free,
             gpu_memory_total_mb=gpu_total,
+            gpu_utilization_percent=gpu_util,
             cpu_memory_free_mb=cpu_free,
             cpu_memory_total_mb=cpu_total,
+            cpu_utilization_percent=cpu_util,
             active_tasks_count=self._active_tasks,
             active_connections_count=active_connections,
             queue_depth=self.get_queue_depth(),
             uptime_sec=round(uptime, 2),
+            temperature_celsius=gpu_temp,
         )

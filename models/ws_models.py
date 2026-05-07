@@ -67,12 +67,15 @@ class WSStatusResponse(WSBaseMessage):
     adapter_status: Literal["idle", "busy", "overloaded"] = "idle"
     gpu_memory_free_mb: int | None = None
     gpu_memory_total_mb: int | None = None
+    gpu_utilization_percent: float | None = None
     cpu_memory_free_mb: int | None = None
     cpu_memory_total_mb: int | None = None
+    cpu_utilization_percent: float | None = None
     active_tasks_count: int = 0
     active_connections_count: int = 0
     queue_depth: int = 0
     uptime_sec: float = 0.0
+    temperature_celsius: float | None = None
 
 
 class WSWordItem(BaseModel):

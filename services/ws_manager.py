@@ -63,6 +63,9 @@ class ConnectionManager:
         self.max_connections: int = max_connections
         self.active_connections: Dict[str, WebSocket] = {}
         self.connection_meta: Dict[str, ConnectionMeta] = {}
+        self._status_broadcast_task: Optional[asyncio.Task] = None
+        self._metrics_collector: Optional[Any] = None
+        self._broadcast_interval: float = 5.0
 
     @property
     def active_connections_count(self) -> int:
@@ -161,6 +164,56 @@ class ConnectionManager:
             await websocket.send_text(payload)
         except Exception as exc:
             logger.debug("broadcast_status failed for %s: %s", client_id, exc)
+
+    def set_subscribe_status(self, client_id: str, value: bool) -> None:
+        """
+        Устанавливает флаг подписки на периодический статус для клиента.
+        """
+        meta = self.connection_meta.get(client_id)
+        if meta is not None:
+            meta.subscribe_status = value
+
+    def start_status_broadcast(
+        self,
+        metrics_collector: Any,
+        interval_sec: float = 5.0,
+    ) -> None:
+        """
+        Запускает фоновую задачу периодической рассылки статуса.
+        """
+        self._metrics_collector = metrics_collector
+        self._broadcast_interval = interval_sec
+        if self._status_broadcast_task is None or self._status_broadcast_task.done():
+            self._status_broadcast_task = asyncio.create_task(
+                self._status_broadcast_loop(),
+                name="ws_status_broadcast",
+            )
+            logger.info("Started WS status broadcast every %.1f sec", interval_sec)
+
+    def stop_status_broadcast(self) -> None:
+        """
+        Останавливает фоновую задачу рассылки статуса.
+        """
+        if self._status_broadcast_task is not None and not self._status_broadcast_task.done():
+            self._status_broadcast_task.cancel()
+            logger.info("Stopped WS status broadcast")
+
+    async def _status_broadcast_loop(self) -> None:
+        """Внутренний цикл периодической рассылки статуса."""
+        try:
+            while True:
+                await asyncio.sleep(self._broadcast_interval)
+                if self._metrics_collector is None:
+                    continue
+                status = self._metrics_collector.collect(
+                    active_connections=self.active_connections_count,
+                    max_connections=self.max_connections,
+                )
+                await self.broadcast_status(status)
+        except asyncio.CancelledError:
+            logger.debug("Status broadcast loop cancelled")
+        except Exception as exc:
+            logger.error("Status broadcast loop error: %s", exc)
 
     async def disconnect_all(self, code: int = 1001, reason: str = "Server shutdown") -> None:
         """

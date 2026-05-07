@@ -7,6 +7,7 @@
 
 import logging
 from io import BytesIO
+from typing import Union, Annotated, Optional, Any, List, Dict
 
 from pydub import AudioSegment
 
@@ -34,6 +35,7 @@ async def process_audio_stream_chunk(
     recognizer,
     punctuator,
     manager: ConnectionManager,
+    metrics_collector: Optional[Any] = None,
 ) -> None:
     """
     Обрабатывает входящий чанк аудио в потоковом режиме.
@@ -56,6 +58,8 @@ async def process_audio_stream_chunk(
         punctuator: Экземпляр SbertPuncCaseOnnx (не используется в чанке, передаётся для единообразия).
         manager: Менеджер WebSocket-соединений для отправки ответов.
     """
+    if metrics_collector is not None:
+        metrics_collector.increment_tasks()
     try:
         # --- 1. Проверка чётности ---
         if len(chunk_bytes) % 2 != 0:
@@ -168,6 +172,9 @@ async def process_audio_stream_chunk(
             await manager.send_message(session.client_id, error_msg)
         except Exception:
             pass
+    finally:
+        if metrics_collector is not None:
+            metrics_collector.decrement_tasks()
 
 
 async def process_final_audio(
@@ -175,6 +182,7 @@ async def process_final_audio(
     recognizer,
     punctuator,
     manager: ConnectionManager,
+    metrics_collector: Optional[Any] = None,
 ) -> None:
     """
     Обрабатывает финальный буфер аудио по получении EOF/EOS.
@@ -192,6 +200,8 @@ async def process_final_audio(
         punctuator: Экземпляр SbertPuncCaseOnnx.
         manager: Менеджер WebSocket-соединений.
     """
+    if metrics_collector is not None:
+        metrics_collector.increment_tasks()
     try:
         # --- 1. Объединение остатков ---
         final_audio = session.audio_overlap + session.audio_buffer
@@ -262,3 +272,6 @@ async def process_final_audio(
             await manager.send_message(session.client_id, error_msg)
         except Exception:
             pass
+    finally:
+        if metrics_collector is not None:
+            metrics_collector.decrement_tasks()

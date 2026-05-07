@@ -69,7 +69,7 @@ class DeprecationHeaderMiddleware:
             if message["type"] == "http.response.start":
                 headers = MutableHeaders(raw=message["headers"])
                 path = scope.get("path", "")
-                if path in {"/root/", "/root/demo", "/root/is_alive", "/root/post_file", "/root/post_one_step_req", "/root/ws"}:
+                if path in {"/", "/demo", "/is_alive", "/post_file", "/post_one_step_req", "/ws"}:
                     headers["Deprecation"] = "true"
                     headers["Warning"] = f'299 - "Legacy API is deprecated. Use /api/v1/ instead."'
                 message["headers"] = headers.raw
@@ -140,6 +140,7 @@ async def lifespan(app):
 
     # Graceful shutdown WebSocket (Задача 6.4, 6.9)
     if hasattr(app.state, "ws_manager"):
+        app.state.ws_manager.stop_status_broadcast()
         await app.state.ws_manager.disconnect_all()
 
     # cleanup (если нужно)
@@ -155,7 +156,6 @@ app = FastAPI(
     lifespan=lifespan,
     version="1.0",
     docs_url='/docs',
-    root_path='/root',
     title='ASR',
     description=WS_DESCRIPTION
     )

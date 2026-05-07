@@ -110,7 +110,7 @@ async def websocket_endpoint(
                 if message.get("bytes"):
                     # Binary frame: отправляем сырые байты напрямую в pipeline, без base64-обёртки
                     await process_audio_stream_chunk(
-                        session, message["bytes"], recognizer, punctuator, manager
+                        session, message["bytes"], recognizer, punctuator, manager, metrics
                     )
                     continue
                 elif message.get("text"):
@@ -127,6 +127,10 @@ async def websocket_endpoint(
                 ):
                     await msg_router.route(msg, session, manager, metrics_collector=metrics)
 
+                # Подписка на периодический статус при запросе status
+                if msg.type == WSMessageType.status_request:
+                    manager.set_subscribe_status(session.client_id, True)
+
                 # Копирование флагов из конфига в сессию (для ASR pipeline)
                 if isinstance(msg, WSConfigMessage):
                     session.wait_null_answers = msg.wait_null_answers
@@ -141,12 +145,12 @@ async def websocket_endpoint(
                         chunk_bytes = base64.b64decode(msg.audio_base64)
                     if chunk_bytes:
                         await process_audio_stream_chunk(
-                            session, chunk_bytes, recognizer, punctuator, manager
+                            session, chunk_bytes, recognizer, punctuator, manager, metrics
                         )
 
                 # 7. Обработка конца потока (eos/eof)
                 if isinstance(msg, WSEosMessage):
-                    await process_final_audio(session, recognizer, punctuator, manager)
+                    await process_final_audio(session, recognizer, punctuator, manager, metrics)
                     break
 
         except WebSocketDisconnect:
