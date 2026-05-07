@@ -1,7 +1,6 @@
 import uuid
 import asyncio
 from fastapi import APIRouter, Depends
-from utils.pre_start_init import posted_and_downloaded_audio
 from utils.get_audio_file import getting_audiofile, open_default_audiofile
 from models.fast_api_models import SyncASRRequest, BaseResponse
 
@@ -46,9 +45,9 @@ async def post(params: SyncASRRequest,
     # Получаем файл
     post_id = uuid.uuid4()
     if params.AudioFileUrl:
-        res, error_description = await getting_audiofile(params.AudioFileUrl, post_id)
+        res, error_description, buffer = await getting_audiofile(params.AudioFileUrl, post_id)
     else:
-        res, error_description = await open_default_audiofile(post_id)
+        res, error_description, buffer = await open_default_audiofile(post_id)
 
     if not res:
         logger.error(f'Ошибка получения файла - {error_description}, ссылка на файл - {params.AudioFileUrl}')
@@ -63,7 +62,7 @@ async def post(params: SyncASRRequest,
     try:
         # Запускаем обработку в потоке
         result_dict = await asyncio.to_thread(process_file,
-                                              tmp_path=posted_and_downloaded_audio[post_id],
+                                              tmp_path=buffer,
                                               params=params,
                                               recognizer=recognizer,
                                               punctuator=punctuator,

@@ -39,10 +39,13 @@ def process_file(session=None, recognizer=None, punctuator=None, diarizer=None, 
     logger.debug(f'Принят новый "post_file" id = {post_id}')
 
     try:
+        file_source = session.tmp_path if session.tmp_path is not None else session.file_buffer
+        if file_source is None:
+            raise ValueError("FileRecognitionSession has no tmp_path or file_buffer")
         if params.make_mono:
-            audio_input = AudioSegment.from_file(session.tmp_path).set_channels(1)
+            audio_input = AudioSegment.from_file(file_source).set_channels(1)
         else:
-            audio_input = AudioSegment.from_file(session.tmp_path)
+            audio_input = AudioSegment.from_file(file_source)
     except Exception as e:
         error_description += f"Error loading audio file: {e}"
         logger.error(error_description)
@@ -159,7 +162,7 @@ def process_file(session=None, recognizer=None, punctuator=None, diarizer=None, 
     # Проверяем возможность диаризации. Если здесь стерео-канал, то диаризацию выключаем.
     elif params.do_diarization and len(audio_input.split_to_mono()) != 1:
         error_description += f"Only mono diarization available.\n"
-        logger.warn("При запрошенной диаризации аудио имеет более одного аудио-канала. Диаризация будет выключена.")
+        logger.warning("При запрошенной диаризации аудио имеет более одного аудио-канала. Диаризация будет выключена.")
         params.do_diarization = False
 
     if params.do_diarization:

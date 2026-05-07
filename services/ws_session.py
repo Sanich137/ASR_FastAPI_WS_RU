@@ -6,26 +6,16 @@
 
 import time
 from collections import deque
-from enum import Enum
 from typing import Optional
 
 import numpy as np
-from pydub import AudioSegment
 
 from models.ws_models import WSConfigMessage
+from services.recognition_session import RecognitionSession, SessionState
 from config import settings
 
 
-class SessionState(str, Enum):
-    """Состояния жизненного цикла аудио-сессии."""
-    connecting = "connecting"
-    receiving = "receiving"
-    processing = "processing"
-    completed = "completed"
-    error = "error"
-
-
-class AudioSession:
+class AudioSession(RecognitionSession):
     """
     Управляет буфером аудио и состоянием для одного WebSocket-клиента.
 
@@ -51,31 +41,25 @@ class AudioSession:
             max_buffer_duration_sec: Максимальная длительность буфера (сек).
                 По умолчанию берётся из settings.WS_MAX_BUFFER_DURATION_SEC.
         """
-        self.client_id: str = client_id
-        self.state: SessionState = SessionState.connecting
-        self.buffer: deque[np.ndarray] = deque()
-        self.config: Optional[WSConfigMessage] = None
+        super().__init__(session_id=client_id)
+        self.state = SessionState.connecting
+        self.wait_null_answers: bool = True
+        self.last_activity: float = time.time()
         self.max_buffer_duration_sec: float = (
             max_buffer_duration_sec
             if max_buffer_duration_sec is not None
             else getattr(settings, "WS_MAX_BUFFER_DURATION_SEC", 300.0)
         )
-        self.last_activity: float = time.time()
+        self.buffer: deque[np.ndarray] = deque()
 
-        # --- Поля для ASR pipeline (Задача 6.3) ---
-        self.audio_buffer: AudioSegment = AudioSegment.silent(
-            1, frame_rate=settings.BASE_SAMPLE_RATE
-        )
-        self.audio_overlap: AudioSegment = AudioSegment.silent(
-            1, frame_rate=settings.BASE_SAMPLE_RATE
-        )
-        self.audio_to_asr: list[AudioSegment] = []
-        self.audio_duration: float = 0.0
-        self.ws_collected_asr_res: dict = {f"channel_{1}": []}
-        self.wait_null_answers: bool = True
-        self.do_dialogue: bool = False
-        self.do_punctuation: bool = False
-        self.channel_name: str = "Null"
+    @property
+    def ws_collected_asr_res(self) -> dict:
+        """Alias для collected_asr_res из RecognitionSession (обратная совместимость)."""
+        return self.collected_asr_res
+
+    @ws_collected_asr_res.setter
+    def ws_collected_asr_res(self, value: dict) -> None:
+        self.collected_asr_res = value
 
     @property
     def current_buffer_duration_sec(self) -> float:
@@ -140,24 +124,13 @@ class AudioSession:
 
     async def reset(self) -> None:
         """
-        Очищает буфер, сбрасывает конфигурацию и переводит сессию
-        в начальное состояние (connecting).
+        Очищает WS-специфичные буферы и сбрасывает базовое состояние.
         """
-        self.buffer.clear()
-        self.config = None
+        await super().reset()
         self.state = SessionState.connecting
+        self.buffer.clear()
         self.last_activity = time.time()
-
-        # Сброс ASR pipeline state
-        self.audio_buffer = AudioSegment.silent(1, frame_rate=settings.BASE_SAMPLE_RATE)
-        self.audio_overlap = AudioSegment.silent(1, frame_rate=settings.BASE_SAMPLE_RATE)
-        self.audio_to_asr = []
-        self.audio_duration = 0.0
-        self.ws_collected_asr_res = {f"channel_{1}": []}
         self.wait_null_answers = True
-        self.do_dialogue = False
-        self.do_punctuation = False
-        self.channel_name = "Null"
 
     def is_expired(self, timeout_sec: float) -> bool:
         """
@@ -179,17 +152,14 @@ class AudioSession:
             dict с client_id, config, channel_name, audio_duration, флагами
             и накопленными результатами распознавания.
         """
-        return {
+        data = super().to_dict()
+        data.update({
             "client_id": self.client_id,
-            "config": self.config.model_dump() if self.config else None,
-            "channel_name": self.channel_name,
-            "audio_duration": self.audio_duration,
-            "do_dialogue": self.do_dialogue,
-            "do_punctuation": self.do_punctuation,
             "wait_null_answers": self.wait_null_answers,
-            "ws_collected_asr_res": self.ws_collected_asr_res,
-            "state": self.state.value,
-        }
+            "last_activity": self.last_activity,
+            "max_buffer_duration_sec": self.max_buffer_duration_sec,
+        })
+        return data
 
     @classmethod
     def from_dict(cls, data: dict) -> "AudioSession":
@@ -202,7 +172,7 @@ class AudioSession:
         Returns:
             AudioSession с восстановленной конфигурацией и флагами.
         """
-        session = cls(client_id=data["client_id"])
+        session = cls(client_id=data.get("client_id", data.get("session_id", "")))
         if data.get("config"):
             session.config = WSConfigMessage(**data["config"])
         session.channel_name = data.get("channel_name", "Null")
@@ -210,6 +180,11 @@ class AudioSession:
         session.do_dialogue = data.get("do_dialogue", False)
         session.do_punctuation = data.get("do_punctuation", False)
         session.wait_null_answers = data.get("wait_null_answers", True)
-        session.ws_collected_asr_res = data.get("ws_collected_asr_res", {f"channel_{1}": []})
+        session.collected_asr_res = data.get("collected_asr_res") or data.get("ws_collected_asr_res", {f"channel_{1}": []})
         session.state = SessionState(data.get("state", "connecting"))
+        session.last_activity = data.get("last_activity", time.time())
+        session.max_buffer_duration_sec = data.get(
+            "max_buffer_duration_sec",
+            getattr(settings, "WS_MAX_BUFFER_DURATION_SEC", 300.0),
+        )
         return session

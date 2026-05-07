@@ -38,14 +38,13 @@ async def audio_session_lifecycle(client_id: str):
     """
     Контекстный менеджер жизненного цикла AudioSession.
 
-    Гарантирует очистку AudioSegment-буферов и глобальных dict при выходе.
+    Гарантирует очистку AudioSegment-буферов.
     """
     session = AudioSession(client_id=client_id)
     try:
         yield session
     finally:
         await session.reset()
-        _cleanup_globals(client_id)
 
 
 @router.websocket("/ws")

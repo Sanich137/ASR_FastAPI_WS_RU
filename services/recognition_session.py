@@ -19,6 +19,8 @@ from models.ws_models import WSConfigMessage
 class SessionState(str, Enum):
     """Состояния жизненного цикла сессии распознавания."""
     created = "created"
+    connecting = "connecting"
+    receiving = "receiving"
     processing = "processing"
     completed = "completed"
     error = "error"
@@ -63,7 +65,7 @@ class RecognitionSession:
         """Возвращает session_id как client_id для совместимости с WS-обработчиками и VAD."""
         return self.session_id
 
-    def reset(self) -> None:
+    async def reset(self) -> None:
         """
         Очищает AudioSegment-буферы, результаты и сбрасывает состояние.
         """
