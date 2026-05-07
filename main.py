@@ -90,6 +90,15 @@ async def lifespan(app):
     logger.debug("Приложение FastAPI запущено")
     app.state.start_time = time.time()
 
+    # Инициализация WebSocket-сервисов
+    from services.ws_manager import ConnectionManager
+    from services.ws_metrics import SystemMetricsCollector
+    from core.state_store import InMemoryStateStore
+    app.state.ws_manager = ConnectionManager(max_connections=settings.WS_MAX_CONNECTIONS)
+    app.state.metrics_collector = SystemMetricsCollector(start_time=app.state.start_time)
+    app.state.state_store = InMemoryStateStore()
+    logger.debug("WebSocket services initialized")
+
     # Настройка сборщика мусора.
     gc.set_threshold(500, 5, 5)
 
@@ -128,6 +137,10 @@ async def lifespan(app):
         logger.info("File watcher started")
 
     yield  # Здесь приложение работает
+
+    # Graceful shutdown WebSocket (Задача 6.4, 6.9)
+    if hasattr(app.state, "ws_manager"):
+        await app.state.ws_manager.disconnect_all()
 
     # cleanup (если нужно)
     if hasattr(app.state, "recognizer"):

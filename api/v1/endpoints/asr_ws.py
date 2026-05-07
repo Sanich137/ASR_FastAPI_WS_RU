@@ -1,244 +1,175 @@
-from pydub import AudioSegment
+"""
+WebSocket-роут /api/v1/asr/ws
+Использует ConnectionManager, AudioSession, MessageRouter, asr_pipeline.
+Сохраняет обратную совместимость протокола (config, audio, eof/eos).
+"""
 
-import ujson
+import asyncio
+import base64
 import logging
-from config import settings
 import uuid
-from io import BytesIO
+from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, WebSocket, Depends
-from utils.chunk_doing import find_last_speech_position
-from utils.pre_start_init import audio_buffer, audio_overlap, audio_to_asr, audio_duration, ws_collected_asr_res
-from utils.send_messages import send_messages
-from utils.tokens_to_Result import process_single_token_vocab_output
-from utils.resamppling import async_resample_audiosegment
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 
+from config import settings
+from models.ws_models import (
+    WSConfigMessage,
+    WSAudioMessage,
+    WSEosMessage,
+    WSErrorMessage,
+    WSMessageType,
+    parse_ws_message,
+)
+from services.ws_manager import ConnectionManager
+from services.ws_session import AudioSession, SessionState
+from services.ws_handler import MessageRouter, handle_config, handle_ping, handle_status_request
+from services.ws_metrics import SystemMetricsCollector
+from services.asr_pipeline import process_audio_stream_chunk, process_final_audio
 from Recognizer import get_recognizer, Recognizer
-from Recognizer.engine.sentensizer import do_sensitizing
-from Recognizer.engine.stream_recognition import simple_recognise
 from Punctuation import get_punctuator, SbertPuncCaseOnnx
 
 router = APIRouter(prefix="/asr", tags=["ASR"])
 logger = logging.getLogger(__name__)
 
 
+@asynccontextmanager
+async def audio_session_lifecycle(client_id: str):
+    """
+    Контекстный менеджер жизненного цикла AudioSession.
+
+    Гарантирует очистку AudioSegment-буферов и глобальных dict при выходе.
+    """
+    session = AudioSession(client_id=client_id)
+    try:
+        yield session
+    finally:
+        await session.reset()
+        _cleanup_globals(client_id)
+
+
 @router.websocket("/ws")
-async def websocket(
-    ws: WebSocket,
+async def websocket_endpoint(
+    websocket: WebSocket,
     recognizer: Recognizer = Depends(get_recognizer),
     punctuator: SbertPuncCaseOnnx = Depends(get_punctuator),
 ):
-    wait_null_answers = True
-    client_id = uuid.uuid4()
-    logger.debug(f'Принят новый сокет id = {client_id}')
-    audio_buffer[client_id] = AudioSegment.silent(1, frame_rate=settings.BASE_SAMPLE_RATE)
-    audio_overlap[client_id] = AudioSegment.silent(1, frame_rate=settings.BASE_SAMPLE_RATE)
-    audio_duration[client_id] = 0
-    audio_to_asr[client_id] = list()
-    ws_collected_asr_res[client_id] = {f"channel_{1}": list()}
-    do_dialogue = False
-    do_punctuation = False
-    audio_format = 'raw'
-    sample_rate = settings.BASE_SAMPLE_RATE
-    sentenced_data = None
-    error_description = None
+    """
+    WebSocket endpoint для потокового распознавания речи (ASR).
 
-    await ws.accept()
-    channel_name = str()
+    Протокол:
+      1. Клиент отправляет config (WSConfigMessage).
+      2. Клиент отправляет audio_chunk (WSAudioMessage или binary frame).
+      3. По завершении — eos/eof (WSEosMessage или текст "eof").
+    """
+    manager: ConnectionManager = websocket.app.state.ws_manager
+    metrics: SystemMetricsCollector = websocket.app.state.metrics_collector
+    state_store = websocket.app.state.state_store
 
-    while True:
+    client_id = str(uuid.uuid4())
+    logger.info("New WS connection: %s", client_id)
+
+    # 1. Подключение (с проверкой лимита соединений)
+    if not await manager.connect(websocket, client_id):
+        logger.warning("Connection rejected for %s (max connections reached)", client_id)
+        return
+
+    # 2. Жизненный цикл сессии (гарантированная очистка в finally)
+    async with audio_session_lifecycle(client_id) as session:
+        # 3. Регистрация хендлеров сообщений
+        msg_router = MessageRouter()
+        msg_router.register_handler(WSMessageType.config, handle_config)
+        msg_router.register_handler(WSMessageType.ping, handle_ping)
+        msg_router.register_handler(WSMessageType.status_request, handle_status_request)
+
         try:
-            message = await ws.receive()
-        except Exception as wse:
-            logger.error(f"receive WebSocketException - {wse}")
-            return
-
-        if isinstance(message, dict) and message.get('text'):
-            try:
-                if message.get('text') and 'config' in message.get('text'):
-                    json_cfg = ujson.loads(message.get('text'))['config']
-                    audio_format = json_cfg.get("audio_format", 'pcm16')
-                    sample_rate = json_cfg.get('sample_rate')
-                    wait_null_answers = json_cfg.get('wait_null_answers', wait_null_answers)
-                    do_dialogue = json_cfg.get("do_dialogue", False)
-                    do_punctuation = json_cfg.get("do_punctuation", False)
-                    try:
-                        channel_name = message.get('text').get("channelName")
-                    except Exception as e:
-                        channel_name = "Null"
-                        logger.debug("ChannelName not parsed")
-                    logger.info(f"Task received, config -  {message.get('text')}")
-                    continue
-
-                elif message.get('text') and 'eof' in message.get('text'):
-                    logger.info(f"EOF received in channel {channel_name}")
-                    break
-                else:
-                    logger.error(f"Can`t recognise  text part of  message {message.get('text')} in channel {channel_name}")
-
-            except Exception as e:
-                logger.error(f'Error text message compiling. Message:{message} - error:{e} in channel {channel_name}')
-        elif isinstance(message, dict) and message.get('bytes'):
-            try:
-                chunk = message.get('bytes')
-
-                if audio_format == 'pcm16':
-                    if len(chunk) % 2 != 0:
-                        chunk += bytes(2 - (len(chunk) % 2))
-
-                    audiosegment_chunk = AudioSegment(
-                        chunk,
-                        frame_rate=sample_rate,
-                        sample_width=2,
-                        channels=1
+            while True:
+                # 4. Получение сообщения с idle timeout
+                try:
+                    message = await asyncio.wait_for(
+                        websocket.receive(),
+                        timeout=settings.WS_IDLE_TIMEOUT_SEC,
                     )
+                except asyncio.TimeoutError:
+                    logger.info("Idle timeout for client %s", client_id)
+                    await manager.send_message(
+                        client_id,
+                        WSErrorMessage(
+                            code="idle_timeout",
+                            message=f"No messages for {settings.WS_IDLE_TIMEOUT_SEC}s",
+                            is_fatal=False,
+                        ),
+                    )
+                    break
 
-                else:
-                    try:
-                        buffer = BytesIO(chunk)
-                        buffer.seek(0)
-                        audiosegment_chunk = AudioSegment.from_file(buffer)
+                # Обработка disconnect от клиента
+                if message.get("type") == "websocket.disconnect":
+                    logger.info("Client %s disconnected (code=%s)", client_id, message.get("code"))
+                    break
 
-                    except Exception as e:
-                        logger.error(f"Ошибка принятия аудио - {e} in channel {channel_name}")
-                    else:
-                        logger.debug(f"Чанк принят и распознан in channel {channel_name}")
-
-                if audiosegment_chunk.frame_rate != settings.BASE_SAMPLE_RATE:
-                    audiosegment_chunk = await async_resample_audiosegment(audiosegment_chunk, settings.BASE_SAMPLE_RATE)
-
-                if audiosegment_chunk.channels != 1:
-                    audiosegment_chunk = audiosegment_chunk.set_channels(1)
-                audio_buffer[client_id] += audiosegment_chunk
-
-                if (audio_overlap[client_id] + audio_buffer[client_id]).duration_seconds >= settings.MAX_OVERLAP_DURATION:
-                    await find_last_speech_position(client_id, is_last_chunk=False)
-
-                else:
+                # Определяем тип содержимого: bytes (binary) или text (JSON)
+                if message.get("bytes"):
+                    # Binary frame: отправляем сырые байты напрямую в pipeline, без base64-обёртки
+                    await process_audio_stream_chunk(
+                        session, message["bytes"], recognizer, punctuator, manager
+                    )
                     continue
-            except Exception as e:
-                logger.error(f"AcceptWaveform error - {e} in channel {channel_name}")
-            else:
-                try:
-                    asr_result = await simple_recognise(audio_to_asr[client_id][-1], recognizer=recognizer)
-                    asr_result_words = process_single_token_vocab_output(asr_result, audio_duration[client_id])
-                    audio_duration[client_id] += audio_to_asr[client_id][-1].duration_seconds
-                    logger.debug(asr_result_words)
-
-                    ws_collected_asr_res[client_id][f"channel_{1}"].append(asr_result_words)
-
-                except Exception as e:
-                    logger.error(f"recognizer.get_result(stream()) error - {e}")
+                elif message.get("text"):
+                    msg = parse_ws_message(message["text"])
                 else:
-                    if len(asr_result_words.get("data").get("text")) == 0 or asr_result_words.get("data").get("text") == ' ':
-                        if wait_null_answers:
-                            if not await send_messages(ws, _silence=True, _data=None, _error=None, _channel_name=channel_name):
-                                logger.error(f"send_message not ok work canceled")
-                                try:
-                                    del audio_overlap[client_id]
-                                    del audio_buffer[client_id]
-                                    del audio_to_asr[client_id]
-                                    del audio_duration[client_id]
-                                    del ws_collected_asr_res[client_id]
-                                except Exception as e:
-                                    logger.error(f"error clearing globals after abnormal closing socket - {e}")
-                                return
-                        else:
-                            logger.debug("sending silence partials skipped")
-                            continue
-                    else:
-                        if not await send_messages(ws, _silence=False, _data=asr_result_words, _error=None, _channel_name=channel_name):
-                            logger.error(f"send_message not ok work canceled")
-                            try:
-                                del audio_overlap[client_id]
-                                del audio_buffer[client_id]
-                                del audio_to_asr[client_id]
-                                del audio_duration[client_id]
-                                del ws_collected_asr_res[client_id]
-                            except Exception as e:
-                                logger.error(f"error clearing globals after abnormal closing socket - {e}")
-                            return
-        elif isinstance(message, dict) and message.get('type') == "websocket.disconnect":
-            description = f"Channel {channel_name} closed from outside"
-            logger.error(description)
-            break
-        else:
-            error_description = f"Can`t parse message - {message} in channel {channel_name}"
-            logger.error(error_description)
+                    logger.warning("Unknown WS message format for %s: %s", client_id, message)
+                    continue
 
-            if not await send_messages(ws, _silence=False, _data=None, _error=error_description, _channel_name=channel_name):
-                logger.error(f"send_message not ok work canceled in channel {channel_name}")
-                try:
-                    del audio_overlap[client_id]
-                    del audio_buffer[client_id]
-                    del audio_to_asr[client_id]
-                    del audio_duration[client_id]
-                    del ws_collected_asr_res[client_id]
-                except Exception as e:
-                    logger.error(f"error clearing globals after abnormal closing socket - {e} in channel {channel_name}")
-                return
+                # 5. Маршрутизация служебных сообщений
+                if msg.type in (
+                    WSMessageType.config,
+                    WSMessageType.ping,
+                    WSMessageType.status_request,
+                ):
+                    await msg_router.route(msg, session, manager, metrics_collector=metrics)
 
-    audio_to_asr[client_id].append(audio_overlap[client_id] + audio_buffer[client_id])
-    logger.debug(f'итоговое сообщение - {audio_to_asr[client_id][-1].duration_seconds} секунд')
+                # Копирование флагов из конфига в сессию (для ASR pipeline)
+                if isinstance(msg, WSConfigMessage):
+                    session.wait_null_answers = msg.wait_null_answers
+                    session.do_dialogue = msg.do_dialogue
+                    session.do_punctuation = msg.do_punctuation
+                    session.channel_name = msg.channel_name or "Null"
 
-    try:
-        try:
-            if audio_to_asr[client_id][-1].duration_seconds < 2:
-                audio_to_asr[client_id][-1] = audio_to_asr[client_id][-1] + AudioSegment.silent(1000, frame_rate=sample_rate)
-        except Exception as e:
-            logger.error(f"Ошибка дополнения тишиной последнего чанка - {e} in channel {channel_name}")
-            last_result = None
-            error_description = f"Ошибка дополнения тишиной последнего чанка - {e} in channel {channel_name}"
-        else:
-            last_asr_result_w_conf = await simple_recognise(audio_to_asr[client_id][-1], recognizer=recognizer)
-            last_result = process_single_token_vocab_output(last_asr_result_w_conf, audio_duration[client_id])
-            logger.debug(f'Последний результат {last_result.get("data").get("text")} in channel {channel_name}')
+                # 6. Обработка аудио-чанка
+                if isinstance(msg, WSAudioMessage):
+                    chunk_bytes = b""
+                    if msg.audio_base64:
+                        chunk_bytes = base64.b64decode(msg.audio_base64)
+                    if chunk_bytes:
+                        await process_audio_stream_chunk(
+                            session, chunk_bytes, recognizer, punctuator, manager
+                        )
 
-            ws_collected_asr_res[client_id][f"channel_{1}"].append(last_result)
+                # 7. Обработка конца потока (eos/eof)
+                if isinstance(msg, WSEosMessage):
+                    await process_final_audio(session, recognizer, punctuator, manager)
+                    break
 
-    except Exception as e:
-        logger.error(f"last_asr_result_w_conf error - {e}")
-
-    else:
-        if len(last_result.get("data").get("text")) == 0:
-            is_silence = True
-            last_result = None
-        elif last_result.get("data").get("text") == ' ':
-            is_silence = True
-            last_result = None
-        else:
-            logger.debug(last_result)
-            is_silence = False
-
-        if do_dialogue:
+        except WebSocketDisconnect:
+            logger.info("Client %s disconnected normally", client_id)
+        except Exception as exc:
+            logger.exception("WS error for %s: %s", client_id, exc)
             try:
-                sentenced_data = await do_sensitizing(ws_collected_asr_res[client_id], do_punctuation, punctuator=punctuator)
-            except Exception as e:
-                logger.error(f"await do_sensitizing - {e}")
-                error_description = f"do_sensitizing - {e}"
-
-        if not await send_messages(ws, _silence=is_silence, _data=last_result, _error=error_description, _last_message=True,
-                                   _sentenced_data=sentenced_data, _channel_name=channel_name):
-            logger.error(f"send_message not ok work canceled in channel {channel_name}")
+                await manager.send_message(
+                    client_id,
+                    WSErrorMessage(
+                        code="internal_error",
+                        message=str(exc),
+                        is_fatal=True,
+                    ),
+                )
+            except Exception:
+                pass
+        finally:
+            logger.info("Closing WS connection %s", client_id)
+            # Сохранение мета-информации в StateStore (аудит / восстановление)
             try:
-                del audio_overlap[client_id]
-                del audio_buffer[client_id]
-                del audio_to_asr[client_id]
-                del audio_duration[client_id]
-                del ws_collected_asr_res[client_id]
-            except Exception as e:
-                logger.error(f"error clearing globals after abnormal closing socket - {e} in channel {channel_name}")
-            return
-
-    logger.info(f"Closing connection {channel_name}")
-    await ws.close()
-
-    try:
-        del audio_overlap[client_id]
-        del audio_buffer[client_id]
-        del audio_to_asr[client_id]
-        del audio_duration[client_id]
-        del ws_collected_asr_res[client_id]
-    except Exception as e:
-        logger.error(f"error clearing globals after NORMAL closing socket - {e} in channel {channel_name}")
-    return
+                await state_store.set(f"session:{client_id}", session.to_dict())
+            except Exception as exc:
+                logger.debug("Failed to save session state: %s", exc)
+            await manager.disconnect(client_id)

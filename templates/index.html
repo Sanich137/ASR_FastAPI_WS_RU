@@ -65,6 +65,10 @@
                 <input type="checkbox" id="ws_do_punctuation" name="ws_do_punctuation">
                 <span>Расстановка пунктуации</span>
             </div>
+            <div class="checkbox">
+                <input type="checkbox" id="ws_use_base64" name="ws_use_base64" checked>
+                <span>Оборачивать аудио в base64 (JSON). Если выключено — отправлять raw binary.</span>
+            </div>
         </div>
         <div id="resultFile" class="result"></div>
         <div id="errorFile" class="error"></div>
@@ -252,6 +256,16 @@
         return { sampleRate, numChannels, bitsPerSample };
     }
 
+    function arrayBufferToBase64(buffer) {
+        let binary = '';
+        const bytes = new Uint8Array(buffer);
+        const len = bytes.byteLength;
+        for (let i = 0; i < len; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return window.btoa(binary);
+    }
+
     async function sendChannel(arrayBuffer, channel, numChannels, chunkSize, sampleRate) {
         return new Promise((resolve, reject) => {
             const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -262,18 +276,23 @@
             const doPunctuation = document.getElementById('ws_do_punctuation').checked;
 
             socket.onopen = async function() {
+                const useBase64 = document.getElementById('ws_use_base64').checked;
+
                 socket.send(JSON.stringify({
-                    config: {
-                        sample_rate: sampleRate,
-                        wait_null_answers: true,
-                        do_dialogue: doDialogue,
-                        do_punctuation: doPunctuation
-                    }
+                    type: "config",
+                    sample_rate: sampleRate,
+                    audio_format: "pcm16",
+                    audio_transport: useBase64 ? "json_base64" : "binary",
+                    wait_null_answers: true,
+                    do_dialogue: doDialogue,
+                    do_punctuation: doPunctuation,
+                    channel_name: "channel_" + (channel + 1)
                 }));
 
                 const dataView = new Uint8Array(arrayBuffer);
                 const bytesPerSample = 2;
                 let offset = 44 + channel * bytesPerSample;
+                let seqNum = 0;
 
                 while (offset < dataView.length) {
                     const endOffset = Math.min(offset + chunkSize * numChannels, dataView.length);
@@ -285,12 +304,21 @@
                         chunk[i + 1] = dataView[sampleOffset + 1];
                     }
 
-                    socket.send(chunk);
+                    if (useBase64) {
+                        const base64Chunk = arrayBufferToBase64(chunk);
+                        socket.send(JSON.stringify({
+                            type: "audio_chunk",
+                            audio_base64: base64Chunk,
+                            seq_num: seqNum++
+                        }));
+                    } else {
+                        socket.send(chunk);
+                    }
                     offset += chunkSize * numChannels;
                     await new Promise((resolve) => setTimeout(resolve, 100));
                 }
 
-                socket.send(JSON.stringify({ eof: 1 }));
+                socket.send(JSON.stringify({ type: "eos" }));
             };
 
             socket.onmessage = function(event) {

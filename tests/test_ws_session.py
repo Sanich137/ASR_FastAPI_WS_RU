@@ -112,3 +112,30 @@ class TestAudioSessionBufferDuration:
         sess.config = WSConfigMessage(sample_rate=8000)
         await sess.add_audio(np.zeros(8000, dtype=np.float32))  # 1 сек при 8кГц
         assert sess.current_buffer_duration_sec == pytest.approx(1.0, 0.01)
+
+
+class TestAudioSessionSerialization:
+    def test_to_dict_and_from_dict(self):
+        """Сериализация и восстановление мета-полей сессии."""
+        sess = AudioSession(client_id="ser-test")
+        sess.config = WSConfigMessage(sample_rate=8000, do_dialogue=True, do_punctuation=True)
+        sess.channel_name = "ch-1"
+        sess.audio_duration = 5.0
+        sess.ws_collected_asr_res = {"channel_1": [{"text": "привет"}]}
+        sess.do_dialogue = True
+        sess.do_punctuation = True
+
+        d = sess.to_dict()
+        assert d["client_id"] == "ser-test"
+        assert d["channel_name"] == "ch-1"
+        assert d["audio_duration"] == 5.0
+        assert d["do_dialogue"] is True
+        assert d["do_punctuation"] is True
+
+        restored = AudioSession.from_dict(d)
+        assert restored.client_id == "ser-test"
+        assert restored.channel_name == "ch-1"
+        assert restored.audio_duration == 5.0
+        assert restored.do_dialogue is True
+        assert restored.config.sample_rate == 8000
+        assert restored.ws_collected_asr_res == {"channel_1": [{"text": "привет"}]}

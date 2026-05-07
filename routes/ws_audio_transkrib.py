@@ -20,7 +20,8 @@ from Recognizer.engine.sentensizer import do_sensitizing
 from Recognizer.engine.stream_recognition import simple_recognise
 from Punctuation import get_punctuator, SbertPuncCaseOnnx
 
-#Todo Этот роут должен умереть.
+# Todo: Этот роут — legacy. Удалить после полного перехода клиентов на /api/v1/asr/ws.
+# Сохраняем "frozen" для обратной совместимости; не использовать в новых интеграциях.
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

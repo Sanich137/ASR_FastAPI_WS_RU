@@ -35,6 +35,12 @@ class TestWSConfigMessage:
         msg = WSConfigMessage.model_validate_json(raw)
         assert msg.audio_transport == "binary"
 
+    def test_do_dialogue_and_punctuation(self):
+        raw = '{"type": "config", "do_dialogue": true, "do_punctuation": true}'
+        msg = WSConfigMessage.model_validate_json(raw)
+        assert msg.do_dialogue is True
+        assert msg.do_punctuation is True
+
     def test_from_json(self):
         raw = '{"type": "config", "sample_rate": 8000, "enable_punctuation": true}'
         msg = WSConfigMessage.model_validate_json(raw)

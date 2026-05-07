@@ -32,6 +32,8 @@ class WSConfigMessage(WSBaseMessage):
     enable_diarization: bool = False
     num_speakers: int = Field(default=-1, ge=-1, le=10)
     enable_punctuation: bool = False
+    do_dialogue: bool = False
+    do_punctuation: bool = False
     audio_format: str = "pcm16"
     audio_transport: Literal["json_base64", "binary"] = Field(
         default="json_base64",

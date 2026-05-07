@@ -196,109 +196,148 @@ settings = Settings()
 
 AUDIOEXTENTIONS = [
     # Основные форматы
-    '.mp3', '.wav', '.aac', '.ogg', '.flac', '.m4a', '.wma', '.aiff', '.alac',
+    'mp3', 'wav', 'aac', 'ogg', 'flac', 'm4a', 'wma', 'aiff', 'alac',
     # Менее распространённые форматы
-    '.ape', '.opus', '.amr', '.au', '.mid', '.midi', '.ac3', '.dts', '.ra', '.rm', '.voc',
+    'ape', 'opus', 'amr', 'au', 'mid', 'midi', 'ac3', 'dts', 'ra', 'rm', 'voc',
     # Форматы для сжатия и профессионального аудио
-    '.dsd', '.pcm', '.raw', '.tta', '.webm', '.3ga', '.8svx', '.cda',
+    'dsd', 'pcm', 'raw', 'tta', 'webm', '3ga', '8svx', 'cda',
     # Форматы с потерями и без потерь
-    '.mp2', '.mp1', '.gsm', '.vox', '.dss', '.mka', '.tak', '.ofr', '.spx',
+    'mp2', 'mp1', 'gsm', 'vox', 'dss', 'mka', 'tak', 'ofr', 'spx',
     # Игровые аудиоформаты
-    '.xm', '.mod', '.s3m', '.it', '.nsf',
+    'xm', 'mod', 's3m', 'it', 'nsf',
     # Редкие/устаревшие форматы
-    '.669', '.mtm', '.med', '.far', '.umx'
+    '669', 'mtm', 'med', 'far', 'umx'
 ]
 
 # Описание WebSocket для OpenAPI
 WS_DESCRIPTION = """
-## WebSocket Endpoint -  `/ws`
+## WebSocket Endpoint — `/api/v1/asr/ws` (актуальный протокол)
+
 ### Пример конфигурации
 
 Отправьте JSON с конфигурацией:
 
 ```json
-    {
-        "config": {
-            "audio_format": "pcm16",
-            "sample_rate": 16000,
-            "wait_null_answers": true,
-            "do_dialogue": false,
-            "do_punctuation": false,
-            "channelName": "channel_1" # id канала из астериск, например.
-      }
-    }
+{
+    "type": "config",
+    "sample_rate": 16000,
+    "audio_format": "pcm16",
+    "audio_transport": "json_base64",
+    "wait_null_answers": true,
+    "do_dialogue": false,
+    "do_punctuation": false,
+    "channel_name": "channel_1"
+}
 ```
 
-### Пример передачи данных (JSON + base64)
-
-Используется при `audio_transport: "json_base64"` (по умолчанию):
+### Пример передачи аудио (JSON + base64)
 
 ```json
-    {
-        "type": "audio_chunk",
-        "audio_base64": "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=",
-        "seq_num": 0
-    }
+{
+    "type": "audio_chunk",
+    "audio_base64": "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=",
+    "seq_num": 0
+}
 ```
 
-### Пример передачи данных (Binary)
+### Пример передачи аудио (Binary)
 
 Используется при `audio_transport: "binary"`. Отправляйте WebSocket **binary frame** напрямую (без JSON-обёртки). Сервер читает его через `receive_bytes()`.
 
-### Пример EOF
+### Пример завершения потока (EOS)
 
-По завершении отправьте:
 ```json
-    {
-        "text": "eof"
+{
+    "type": "eos"
+}
+```
+
+### Формат ответа
+
+```json
+{
+    "type": "partial_result",
+    "channel_name": "channel_1",
+    "silence": false,
+    "data": {
+        "result": [
+            {"conf": 1.0, "start": 116.48, "end": 116.76, "word": "владимир"},
+            {"conf": 1.0, "start": 116.92, "end": 117.48, "word": "анатольевич"}
+        ],
+        "text": "владимир анатольевич"
+    },
+    "error": null,
+    "last_message": false,
+    "sentenced_data": null
+}
+```
+
+При завершении (`last_message: true`) и включённых `do_dialogue` + `do_punctuation`:
+
+```json
+{
+    "type": "final_result",
+    "channel_name": "channel_1",
+    "silence": false,
+    "data": {
+        "result": [...],
+        "text": "..."
+    },
+    "error": null,
+    "last_message": true,
+    "sentenced_data": {
+        "raw_text_sentenced_recognition": "channel_1: Ничьих, не требуя ... мои.\\nchannel_1: У Лукоморья дуб зеленый.",
+        "list_of_sentenced_recognitions": [...],
+        "full_text_only": ["..."]
     }
+}
 ```
 
-### Ответы
+---
 
-``` json
-    {
-        'channel_name': 'Null',
-         'silence': False,
-         'data': {
-             'result':
-                      [
-                          {'conf': 1.0, 'start': 116.48, 'end': 116.76, 'word': 'владимир'},
-                          {'conf': 1.0, 'start': 116.92, 'end': 117.48, 'word': 'анатольевич'}
-                      ],
-             'text': 'владимир анатольевич'},
-         'error': None,
-         'last_message': False,
-         'sentenced_data': {}
-     }
-```
-Если в config передать "do_dialogue":true и "do_punctuation":true то в последнем ответе будет предоставлен Капитализированный
-текст, с пунктуацией разбитый на фразы.
+## WebSocket Endpoint — `/ws` (legacy, deprecated)
+
+> ⚠️ **Deprecated**: этот endpoint сохраняется для обратной совместимости. Используйте `/api/v1/asr/ws`.
+
+### Пример конфигурации (legacy)
 
 ```json
-    {
-        'channel_name': 'Null',
-         'silence': False,
-         'data': {
-             'result':
-                      [
-                        {"conf": 1, "start": 0.04, "end": 0.36, "word": "ничьих"},
-                        {"conf": 1, "start": 0.52, "end": 0.56, "word": "не"},
-                        {"conf": 1, "start": 0.64, "end": 0.92, "word": "требуя" },
-                        {"conf": 1, "start": 1.08,"end": 1.44,"word": "похвал"},
-                        ],
-             "text": "ничьих не требуя похвал ... "
-             },
-         'error': None,
-         'last_message': True,
-         'sentenced_data': {
-            'raw_text_sentenced_recognition': "channel_1: Ничьих, не требуя ... мои.\n                     channel_1: У Лукоморья дуб зеленый.", # текст построчно разбитый на фразы.
-            'list_of_sentenced_recognitions': [{'start': 1.0, 'end': 1.28, 'text': 'У Лукоморья дуб зеленый.', 'speaker': 'channel_1'},... ]
-            "full_text_only": [
-                "Ничьих, не требуя похвал. Счастлив уж я надеждой сладкой, что дева с трепетом любви посмотрит, может быть, украдкой на песни грешные мои. У Лукоморья дуб зеленый."
-                                ],
-                            }
-     }
+{
+    "config": {
+        "audio_format": "pcm16",
+        "sample_rate": 16000,
+        "wait_null_answers": true,
+        "do_dialogue": false,
+        "do_punctuation": false,
+        "channelName": "channel_1"
+    }
+}
+```
 
+### Пример передачи данных (legacy)
+
+```json
+{
+    "text": "eof"
+}
+```
+
+### Ответы (legacy)
+
+```json
+{
+    "channel_name": "Null",
+    "silence": false,
+    "data": {
+        "result": [
+            {"conf": 1.0, "start": 116.48, "end": 116.76, "word": "владимир"},
+            {"conf": 1.0, "start": 116.92, "end": 117.48, "word": "анатольевич"}
+        ],
+        "text": "владимир анатольевич"
+    },
+    "error": null,
+    "last_message": false,
+    "sentenced_data": {}
+}
 ```
 """
