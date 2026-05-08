@@ -58,8 +58,6 @@ async def process_audio_stream_chunk(
         punctuator: Экземпляр SbertPuncCaseOnnx (не используется в чанке, передаётся для единообразия).
         manager: Менеджер WebSocket-соединений для отправки ответов.
     """
-    if metrics_collector is not None:
-        metrics_collector.increment_tasks()
     try:
         # --- 1. Проверка чётности ---
         if len(chunk_bytes) % 2 != 0:
@@ -121,12 +119,18 @@ async def process_audio_stream_chunk(
         if segment.duration_seconds <= 0:
             return
 
-        asr_result = await simple_recognise(segment, recognizer=recognizer)
-        asr_result_words = process_single_token_vocab_output(asr_result, session.audio_duration)
-        session.audio_duration += segment.duration_seconds
+        if metrics_collector is not None:
+            metrics_collector.increment_tasks()
+        try:
+            asr_result = await simple_recognise(segment, recognizer=recognizer)
+            asr_result_words = process_single_token_vocab_output(asr_result, session.audio_duration)
+            session.audio_duration += segment.duration_seconds
 
-        # Накопление для финального диалога
-        session.ws_collected_asr_res[f"channel_{1}"].append(asr_result_words)
+            # Накопление для финального диалога
+            session.ws_collected_asr_res[f"channel_{1}"].append(asr_result_words)
+        finally:
+            if metrics_collector is not None:
+                metrics_collector.decrement_tasks()
 
         # --- 7. Отправка результата ---
         text = asr_result_words.get("data", {}).get("text", "")
@@ -172,9 +176,6 @@ async def process_audio_stream_chunk(
             await manager.send_message(session.client_id, error_msg)
         except Exception:
             pass
-    finally:
-        if metrics_collector is not None:
-            metrics_collector.decrement_tasks()
 
 
 async def process_final_audio(
@@ -215,9 +216,15 @@ async def process_final_audio(
             logger.debug("Final audio padded with silence to %.3f sec", final_audio.duration_seconds)
 
         # --- 3. Распознавание ---
-        last_asr_result = await simple_recognise(final_audio, recognizer=recognizer)
-        last_result = process_single_token_vocab_output(last_asr_result, session.audio_duration)
-        session.ws_collected_asr_res[f"channel_{1}"].append(last_result)
+        if metrics_collector is not None:
+            metrics_collector.increment_tasks()
+        try:
+            last_asr_result = await simple_recognise(final_audio, recognizer=recognizer)
+            last_result = process_single_token_vocab_output(last_asr_result, session.audio_duration)
+            session.ws_collected_asr_res[f"channel_{1}"].append(last_result)
+        finally:
+            if metrics_collector is not None:
+                metrics_collector.decrement_tasks()
 
         # --- 4. Определение silence ---
         text = last_result.get("data", {}).get("text", "")

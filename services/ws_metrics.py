@@ -164,6 +164,19 @@ class SystemMetricsCollector:
 
         return "idle"
 
+    @staticmethod
+    def _format_uptime(seconds: float) -> str:
+        total = int(seconds)
+        hours, rem = divmod(total, 3600)
+        minutes, secs = divmod(rem, 60)
+        parts = []
+        if hours > 0:
+            parts.append(f"{hours}h")
+        if minutes > 0 or hours > 0:
+            parts.append(f"{minutes:02d}m")
+        parts.append(f"{secs:02d}s")
+        return " ".join(parts)
+
     def collect(
         self,
         active_connections: int = 0,
@@ -198,5 +211,6 @@ class SystemMetricsCollector:
             active_connections_count=active_connections,
             queue_depth=self.get_queue_depth(),
             uptime_sec=round(uptime, 2),
+            uptime_formatted=self._format_uptime(uptime),
             temperature_celsius=gpu_temp,
         )

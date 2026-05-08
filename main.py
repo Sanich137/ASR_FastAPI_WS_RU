@@ -99,6 +99,12 @@ async def lifespan(app):
     app.state.state_store = InMemoryStateStore()
     logger.debug("WebSocket services initialized")
 
+    # Запуск фоновой push-рассылки статуса (Задача 6.6)
+    app.state.ws_manager.start_status_broadcast(
+        metrics_collector=app.state.metrics_collector,
+        interval_sec=settings.WS_STATUS_BROADCAST_INTERVAL_SEC,
+    )
+
     # Настройка сборщика мусора.
     gc.set_threshold(500, 5, 5)
 

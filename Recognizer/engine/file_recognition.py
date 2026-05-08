@@ -106,7 +106,7 @@ def process_file(session=None, recognizer=None, punctuator=None, diarizer=None, 
 
         if params.use_batch:
             logger.info("Запрошен батчинг")
-            list_asr_result_wo_conf = simple_recognise_batch(session.audio_to_asr, params.batch_size, recognizer)  # --> list
+            list_asr_result_wo_conf = asyncio.run(simple_recognise_batch(session.audio_to_asr, params.batch_size, recognizer))  # --> list
 
             for idx, asr_result_wo_conf in enumerate(list_asr_result_wo_conf):
                 asr_result = recognizer.apply_postprocessing(asr_result_wo_conf, session.audio_duration)

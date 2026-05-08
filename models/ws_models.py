@@ -75,6 +75,7 @@ class WSStatusResponse(WSBaseMessage):
     active_connections_count: int = 0
     queue_depth: int = 0
     uptime_sec: float = 0.0
+    uptime_formatted: str = "0s"
     temperature_celsius: float | None = None
 
 

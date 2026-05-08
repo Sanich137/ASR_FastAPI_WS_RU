@@ -1,3 +1,4 @@
+import asyncio
 import time
 import numpy as np
 from config import settings
@@ -41,8 +42,8 @@ def calc_speed(data):
     return speech_speed
 
 
-async def simple_recognise(audio_data,  recognizer) -> dict:
-    # Приводим фреймрейт к фреймрейту модели
+def _simple_recognise_sync(audio_data, recognizer) -> dict:
+    """Синхронная реализация распознавания (CPU-bound, выполняется в отдельном потоке)."""
     if audio_data.frame_rate != settings.BASE_SAMPLE_RATE:
         audio_data = sync_resample_audiosegment(audio_data, settings.BASE_SAMPLE_RATE)
 
@@ -51,6 +52,11 @@ async def simple_recognise(audio_data,  recognizer) -> dict:
     result = asdict(recognizer.recognize(samples, sample_rate=settings.BASE_SAMPLE_RATE))
 
     return result
+
+
+async def simple_recognise(audio_data, recognizer) -> dict:
+    """Асинхронная обёртка над CPU-bound распознаванием."""
+    return await asyncio.to_thread(_simple_recognise_sync, audio_data, recognizer)
 
 
 async def recognise_w_speed_correction(audio_data, multiplier=float(1.0), can_slow_down = False,
@@ -87,8 +93,8 @@ async def recognise_w_speed_correction(audio_data, multiplier=float(1.0), can_sl
     return result, speed, multiplier
 
 
-def simple_recognise_batch(list_audio_data: list, batch_size: int = 8, recognizer=None) -> list:
-
+def _simple_recognise_batch_sync(list_audio_data: list, batch_size: int, recognizer) -> list:
+    """Синхронная реализация батч-распознавания (CPU-bound, выполняется в отдельном потоке)."""
     logger.info(f"Выполняется батчинг с размером {batch_size}")
 
     timer_sync_start = time.perf_counter()
@@ -136,9 +142,12 @@ def simple_recognise_batch(list_audio_data: list, batch_size: int = 8, recognize
 
     logger.debug(f"Время на распознавание за {(time.perf_counter() - start_encoding):.4f} секунд.")
 
-
-
     return list_of_dict_result
+
+
+async def simple_recognise_batch(list_audio_data: list, batch_size: int = 8, recognizer=None) -> list:
+    """Асинхронная обёртка над CPU-bound батч-распознаванием."""
+    return await asyncio.to_thread(_simple_recognise_batch_sync, list_audio_data, batch_size, recognizer)
 
 
 
