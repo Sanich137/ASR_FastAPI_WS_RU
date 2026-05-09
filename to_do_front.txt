@@ -1,0 +1,631 @@
+# План разработки фронтенда и бэкенда ASR-сервиса
+
+---
+
+## Этап -1. Подготовительный (без написания кода)
+
+- [x] Изучить и отформатировать текущий файл так, чтобы его было удобно читать.
+
+---
+
+## Этап 0. Подготовительный (без написания кода)
+
+- [x] Проанализировать текущую кодовую базу и архитектуру.
+
+**Результат анализа:**
+
+### Архитектура FastAPI
+- **Точка входа:** `main.py` (middleware `RequestIDMiddleware`, `DeprecationHeaderMiddleware`).
+- **Middleware (по тестам):** CORS, GZip, ProxyHeaders, TrustedHost, RequestID (`tests/test_*middleware*.py`).
+- **Конфигурация:** `config.py` — `Settings` на `pydantic-settings`, переменные окружения + `.env`.
+
+### Существующие endpoints
+| Метод | Путь | Назначение |
+|-------|------|------------|
+| GET | `/` | Корневой (legacy) |
+| GET | `/demo` | HTML-страница демо (`api/legacy/demo_page.py`) |
+| POST | `/api/v1/asr/url` | Распознавание по URL (`api/legacy/post_by_url.py`) |
+| POST | `/api/v1/asr/file` | Распознавание файла (POST) |
+| WS | `/api/v1/asr/ws` | Потоковое распознавание (WebSocket) (`api/v1/endpoints/asr_ws.py`) |
+
+### Модели данных (Pydantic)
+- **Домен:** `User`, `UserAccount`, `QuotaInfo`, `UserProfileResponse` (`models/domain/user.py`); `Subscription`, `Transaction`, `RecurringPayment` (`models/domain/billing.py`); `ASRUsageLog`, `AdminActionLog` (`models/domain/audit.py`).
+- **API:** `BaseResponse`, `V1BaseResponse`, `ASRData`, `SyncASRRequest`, `PostFileRequest` и др. (`models/fast_api_models.py`).
+- **WebSocket:** `WSConfigMessage`, `WSAudioMessage`, `WSPingMessage`, `WSStatusResponse` и др. (`models/ws_models.py`). Уже есть `parse_ws_message` и `wrap_binary_audio`.
+- **ORM / БД:** В видимых файлах **нет** SQLAlchemy/Tortoise моделей или Alembic-миграций. Данные сессий хранятся в `InMemoryStateStore` / `RedisStateStore` (`core/state_store.py`). Для пользователей и подписок требуется выбрать и подключить ORM.
+
+### Авторизация
+- **Заготовки:** `core/security.py` — хеширование `bcrypt`, создание/декодирование JWT (`access`/`refresh`), `TokenPayload`. Готов к интеграции.
+- **Статус:** Endpoints ASR **не защищены** авторизацией. Зависимости `get_recognizer`, `get_punctuator`, `get_diarizer` используют `HTTPConnection`, но не проверяют JWT.
+
+### Платёжная система
+- **Заготовки:** Pydantic-модели `Subscription`, `Transaction`, `RecurringPayment` есть, но таблиц в БД и API-эндпоинтов нет.
+
+### WebSocket / Мониторинг
+- **Реализовано:** полный цикл в `services/ws_handler.py`, `ws_manager.py`, `ws_session.py`, `ws_metrics.py`.
+- **Клиент:** `static/monitor.html` подключается к `/api/v1/asr/ws`, отправляет `status_request`, получает `status_response`.
+- **Heartbeat:** добавлен в `monitor.html` (ping каждые 30 сек) для предотвращения `idle_timeout`.
+
+### План интеграции (уточнения)
+- **ORM & БД:** SQLAlchemy 2.0 + Alembic + `asyncpg`. Создаём с нуля таблицы для пользователей, подписок, транзакций, ASR-сессий, системных логов.
+- **Авторизация:** Access токен хранится в памяти клиента (memory), Refresh токен — в `httpOnly Secure SameSite=Strict` cookie. WebSocket-аутентификация — первый фрейм после connect с передачей токена.
+- **Фронтенд:** Jinja2 + чистый HTML+JS (серверный рендеринг шаблонов). Существующие `templates/index.html` и `static/monitor.html` адаптируются под новую структуру.
+- **Платежи:** Интеграция с ЮKassa.
+- **Rate limiting:** По количеству запросов в минуту, с учётом тарифа пользователя.
+- **API-доступ:** Поддержка API keys для программного доступа.
+- Интегрировать `core/security.py` в FastAPI-зависимости (`Depends`) для защиты endpoint'ов.
+
+### Telegram Web App (дополнительный канал)
+- **Контекст:** приложение будет доступно пользователям Telegram через Web App (встроенный WebView).
+- **Авторизация:** Telegram передаёт `initData` (query string) с подписью HMAC-SHA256, проверяемой через `TELEGRAM_BOT_TOKEN`. Пользователь идентифицируется по `telegram_id`.
+- **UI:** отдельный набор шаблонов/JS под мобильный viewport, использование `Telegram.WebApp` SDK (theme params, MainButton, BackButton, viewport stable height).
+- **Платежи:** возможность использования Telegram Stars или `openInvoice` внутри Web App как альтернатива/дополнение к ЮKassa.
+- **Бот:** требуется минимальный Telegram-бот для генерации ссылки на Web App и приёма обратных вызовов (menu button, inline keyboard).
+
+---
+
+## Этап 1. Бэкенд: Расширение моделей данных [x]
+
+**Задача:** Создать с нуля SQLAlchemy 2.0 модели для поддержки авторизации, платежей, админки и API-доступа.
+
+### Инфраструктура БД
+- Установить зависимости: `sqlalchemy[asyncio]`, `alembic`, `asyncpg`.
+- Создать `db/base.py` — `DeclarativeBase` с общими `id` (UUID), `created_at`, `updated_at`.
+- Создать `db/session.py` — `async_sessionmaker` + функция `get_db_session()` для Depends.
+- Создать `db/enums.py` — SQLAlchemy-Enum для ролей, статусов, типов сессий.
+- Инициализировать Alembic (`alembic init alembic`).
+- Настроить `alembic.ini` и `alembic/env.py` для работы с `config.py:Settings.DATABASE_URL` (async).
+- Сгенерировать первую миграцию (`alembic revision --autogenerate -m "init"`) и накатить (`alembic upgrade head`).
+
+### Модель пользователя (`User`)
+- **Поля:** `id` (UUID/PK), `email` (unique, indexed), `hashed_password`, `full_name`, `phone` (optional), `role` (`user`/`admin`/`superadmin`), `is_active`, `email_verified`, `created_at`, `updated_at`, `last_login_at`.
+- **Индексы:** составной по `role` + `is_active`.
+
+### Модель тарифного плана (`Plan`) — справочник
+- **Поля:** `id`, `code` (unique), `name`, `description`, `max_requests_per_minute`, `max_audio_duration_sec`, `price_per_month`, `is_active`.
+- **Назначение:** хранение лимитов для rate limiting и цен для ЮKassa.
+
+### Модель подписки (`Subscription`)
+- **Поля:** `id`, `user_id` (FK → `users.id`), `plan_id` (FK → `plans.id`), `status` (`active`/`expired`/`cancelled`), `started_at`, `expires_at`, `auto_renew`, `yookassa_payment_id`.
+- **Связи:** `user`, `plan`.
+
+### Модель транзакции (`Transaction`)
+- **Поля:** `id`, `user_id` (FK), `subscription_id` (FK, nullable), `amount`, `currency` (`RUB`), `status` (`pending`/`succeeded`/`cancelled`), `payment_provider` (`yookassa`), `external_payment_id`, `created_at`, `metadata` (JSON).
+- **Индекс:** по `external_payment_id` для обработки webhooks.
+
+### Модель сессии ASR (`ASRSession`)
+- **Поля:** `id`, `user_id` (FK, nullable для совместимости), `session_type` (`url`/`file`/`websocket`), `status` (`processing`/`completed`/`failed`), `audio_duration_sec`, `processing_duration_sec`, `cost` (numeric, nullable), `result_json` (JSONB, nullable), `created_at`, `completed_at`, `error_message`, `request_ip`, `user_agent`.
+- **Индексы:** по `user_id`, `created_at` (desc), `status`.
+
+### Модель API-ключа (`ApiKey`)
+- **Поля:** `id`, `user_id` (FK), `name`, `key_hash` (bcrypt/sha256), `permissions` (JSON), `is_active`, `rate_limit_override` (int, nullable), `created_at`, `last_used_at`.
+- **Индексы:** по `user_id`, `key_hash` (unique).
+
+### Модель системного лога (`SystemLog`)
+- **Поля:** `id`, `level` (`info`/`warning`/`error`), `component`, `message`, `metadata` (JSON), `created_at`.
+- **Индекс:** по `created_at` (desc), `level`, `component`.
+
+### Модель аудита админов (`AdminAuditLog`)
+- **Поля:** `id`, `admin_id` (FK → users.id), `action`, `target_type`, `target_id`, `details` (JSON), `created_at`.
+- **Индекс:** по `admin_id`, `created_at` (desc).
+
+### Дополнение модели `User` (Telegram)
+- **Поля:** `telegram_id` (bigint, unique, nullable), `telegram_username` (string, nullable), `telegram_first_name` (string, nullable), `telegram_last_name` (string, nullable), `telegram_photo_url` (text, nullable), `telegram_auth_date` (datetime, nullable).
+- **Индекс:** по `telegram_id`.
+
+### Модель конфигурации Telegram-бота (`TelegramBotConfig`) — опционально
+- **Поля:** `id`, `bot_token_hash` (для хранения токена бота, если нужно в БД), `webapp_url`, `is_active`, `created_at`.
+- **Назначение:** хранение настроек бота для админ-панели (можно заменить env-переменными).
+
+**Результат этапа 1:** созданы `db/base.py`, `db/session.py`, `db/enums.py`, `db/models.py`, `alembic.ini`, `alembic/env.py`, `alembic/script.py.mako`, `alembic/README`. SQLAlchemy 2.0 + aiosqlite + Alembic настроены, модели описаны (включая Telegram-поля в `User` и `TelegramBotConfig`), первая миграция выполнена. Готово к генерации миграции для Telegram-полей.
+
+---
+
+## Этап 2. Бэкенд: Система авторизации, ролей и API-ключей [x]
+
+**Задача:** Реализовать двухфакторную схему JWT (access/refresh) + API Key auth для программного доступа. Использовать существующий `core/security.py` как основу.
+
+### JWT Аутентификация (веб)
+- Реализовать в `api/v1/endpoints/auth.py`:
+  | Метод | Endpoint | Описание |
+  |-------|----------|----------|
+  | POST | `/api/v1/auth/register` | Регистрация (`email`, `password`, `full_name`). Access в JSON, refresh в `httpOnly` cookie. |
+  | POST | `/api/v1/auth/login` | Вход. Access token в теле ответа, refresh token — в `httpOnly Secure SameSite=Strict` cookie. |
+  | POST | `/api/v1/auth/refresh` | Обмен валидного refresh cookie на новую пару access/refresh. Проверка blacklist. |
+  | POST | `/api/v1/auth/logout` | Инвалидация refresh токена (чёрный список в `RedisStateStore`/`InMemoryStateStore`) + очистка cookie. |
+  | POST | `/api/v1/auth/change-password` | Смена пароля (требует старый пароль + access token). |
+  | GET | `/api/v1/auth/me` | Текущий пользователь по access token. |
+
+### WebSocket-аутентификация
+- Первый фрейм после `connect` обязан содержать сообщение типа `auth`: `{"type":"auth","access_token":"..."}`.
+- Использовать `parse_ws_message` из `models/ws_models.py` для разбора.
+- Сервер валидирует токен через `core/security.py` и ассоциирует `AudioSession` / `ConnectionMeta` с `user_id`.
+- При невалидном токене — немедленный `close` с кодом `1008` (Policy Violation).
+- Для публичных WS (если останутся) — `user_id = null`.
+
+### API Key аутентификация (программный доступ)
+- Заголовок `X-API-Key: <key>`.
+- Dependency `require_api_key` — проверка хеша ключа в БД (`ApiKey`), проверка `is_active`, обновление `last_used_at`.
+- API keys действуют только на REST endpoints ASR (не на WS).
+- Возможность ограничить permissions ключа (например, только `asr:read`).
+
+### Авторизация (RBAC)
+- Зависимости FastAPI в `core/deps.py` (новый файл): `require_auth` (JWT), `require_admin`, `require_superadmin`, `require_api_key_or_auth`.
+- Middleware для извлечения `current_user` из JWT (cookie/header) или API Key (header).
+- ASR HTTP endpoints: `require_auth` или `require_api_key_or_auth`.
+- ASR WS: auth через первый фрейм (см. выше).
+- Админ endpoints: `require_admin`.
+
+### Прочее
+- **Хеширование паролей:** `bcrypt` (через `passlib`), переиспользовать `core/security.py`.
+- **Хеширование API keys:** `bcrypt` или `sha256` + salt (ключ показывается пользователю только один раз при создании).
+- **Валидация:** Pydantic v2 схемы для всех auth-запросов (`models/fast_api_models.py` или отдельный `models/auth.py`).
+- **Logout / инвалидация:** refresh токены хранятся в `RedisStateStore`/`InMemoryStateStore` с TTL, возможность отзыва.
+
+### Telegram Web App аутентификация
+- **Механизм:** при открытии Web App клиент получает `initData` из `Telegram.WebApp.initData`. Отправляет его на `POST /api/v1/auth/telegram`.
+- **Валидация:** сервер проверяет HMAC-SHA256 подписи `initData` с использованием `TELEGRAM_BOT_TOKEN` (SHA256 хеш токена — секрет).
+- **Поведение:** если `telegram_id` не найден — автоматическая регистрация (`User` с `role=user`, без пароля). Если найден — выдача access/refresh токенов (так же, как при обычном логине).
+- **Связь с существующей системой:** Telegram-авторизация не отменяет email/password auth, а дополняет её. Пользователь может иметь оба метода.
+
+**Результат этапа 2:** созданы `models/auth.py`, `core/deps.py`, `services/auth_service.py`, `api/v1/endpoints/auth.py`. Реализованы JWT (access/refresh в cookie), API Key auth, RBAC-зависимости, Telegram Web App auth с проверкой HMAC, blacklist refresh-токенов в памяти.
+
+---
+
+## Этап 3. Бэкенд: API для пользовательского кабинета [x]
+
+**Задача:** Создать endpoints для работы обычных пользователей в `api/v1/endpoints/user.py`.
+
+### Профиль пользователя
+- `GET /api/v1/user/profile` — получить профиль (из БД).
+- `PUT /api/v1/user/profile` — обновить профиль (имя, телефон).
+- `POST /api/v1/user/change-password` — смена пароля (отдельно от профиля).
+- `DELETE /api/v1/user/profile` — удалить аккаунт (soft delete, `is_active = false`).
+
+### Квота и подписка
+- `GET /api/v1/user/quota` — остаток запросов/секунд в текущем периоде (расчёт на основе `Plan` и использования).
+- `GET /api/v1/user/subscription` — текущая подписка и детали плана.
+- `POST /api/v1/user/subscription/upgrade` — запрос на смену тарифа (заглушка под платёжный провайдер).
+- `POST /api/v1/user/subscription/cancel` — отмена авто-продления.
+
+### История использования ASR
+- `GET /api/v1/user/sessions` — список сессий распознавания (пагинация, фильтры по дате, статусу).
+- `GET /api/v1/user/sessions/{session_id}` — детали конкретной сессии + `result_json`.
+- `GET /api/v1/user/stats` — агрегированная статистика (всего часов обработано, за месяц, количество сессий).
+
+### API-ключи
+- `GET /api/v1/user/api-keys` — список ключей (без plain key, только имена и даты).
+- `POST /api/v1/user/api-keys` — создать ключ (вернуть plain key один раз).
+- `DELETE /api/v1/user/api-keys/{key_id}` — отозвать ключ (`is_active = false`).
+
+### Telegram Web App endpoints
+- `GET /api/v1/user/telegram/link` — проверка, привязан ли Telegram-аккаунт (для email-пользователей).
+- `POST /api/v1/user/telegram/unlink` — отвязать Telegram (очистка `telegram_id` и т.д., требует подтверждение паролем/email).
+- `GET /tg` — серверно-рендеримая точка входа для Telegram Web App (`templates/tg/index.html`). Должна принимать `initData` и сразу обменивать его на JWT через JS.
+
+**Результат этапа 3:** созданы `models/user.py`, `api/v1/endpoints/user.py`, `api/v1/endpoints/tg.py`, `templates/tg/index.html`. Реализованы профиль, квота, подписка, история ASR, API-ключи, статистика, Telegram link/unlink, точка входа `/tg` для Web App.
+
+---
+
+## Этап 4. Бэкенд: API и Jinja-шаблоны админ-панели [x]
+
+**Задача:** Создать endpoints и страницы для мониторинга и управления системой.
+
+> **Стек фронта:** Jinja2 + чистый HTML/JS. Админ-страницы под `/admin/*`, API под `/api/v1/admin/*`.
+
+### Мониторинг системы
+- `GET /admin/dashboard` (HTML) / `GET /api/v1/admin/metrics` (JSON) — текущие метрики из `SystemMetricsCollector`.
+- `GET /api/v1/admin/metrics/history` — история метрик за период (для графиков Chart.js).
+- `WS /api/v1/admin/ws` — real-time поток метрик. **Auth:** первый фрейм `{"type":"auth","access_token":"..."}`. Проверка `require_admin`. Использовать `MessageRouter` из `services/ws_handler.py`.
+
+### Управление пользователями
+- `GET /admin/users` (HTML) / `GET /api/v1/admin/users` (JSON) — пагинация, поиск, фильтры.
+- `GET /api/v1/admin/users/{user_id}` — детали.
+- `PUT /api/v1/admin/users/{user_id}` — редактирование роли, статуса, блокировки.
+- `DELETE /api/v1/admin/users/{user_id}` — soft delete / блокировка.
+- `GET /api/v1/admin/users/{user_id}/sessions` — история ASR-сессий пользователя.
+- `POST /api/v1/admin/users/{user_id}/impersonate` — получить access token от имени пользователя (superadmin only).
+
+### Управление тарифами (справочник)
+- `GET /admin/tariffs` (HTML) / `GET /api/v1/admin/tariffs` (JSON) — список тарифных планов.
+- `POST /api/v1/admin/tariffs` — создать тариф.
+- `PUT /api/v1/admin/tariffs/{plan_id}` — изменить лимиты/цену.
+- `DELETE /api/v1/admin/tariffs/{plan_id}` — деактивировать тариф (`is_active = false`).
+
+### Управление подписками и платежами
+- `GET /admin/subscriptions` (HTML) / `GET /api/v1/admin/subscriptions` (JSON).
+- `GET /admin/transactions` (HTML) / `GET /api/v1/admin/transactions` (JSON).
+- `POST /api/v1/admin/subscriptions/{sub_id}/extend` — ручное продление (без оплаты).
+- `POST /api/v1/admin/subscriptions/{sub_id}/cancel` — ручная отмена.
+
+### Логи и аудит
+- `GET /admin/logs` (HTML) / `GET /api/v1/admin/logs` (JSON) — системные логи.
+- `GET /api/v1/admin/audit` — аудит действий админов.
+
+### Управление ASR-очередью и сессиями
+- `GET /api/v1/admin/queue` — текущая очередь задач (из `ws_metrics` / state store).
+- `POST /api/v1/admin/queue/{task_id}/cancel` — отменить задачу.
+- `POST /api/v1/admin/users/{user_id}/sessions/{session_id}/disconnect` — принудительно закрыть WS сессию (через `ConnectionManager.disconnect`).
+- `POST /api/v1/admin/maintenance` — включить/выключить режим обслуживания (запретить новые ASR-сессии).
+
+### Управление API-ключами пользователей
+- `GET /api/v1/admin/api-keys` — все ключи (с фильтрами по пользователю).
+- `DELETE /api/v1/admin/api-keys/{key_id}` — отозвать ключ админом.
+
+**Результат этапа 4:** созданы `models/admin.py`, `services/admin_service.py`, `api/v1/endpoints/admin.py`, `routes/admin.py`, шаблоны `templates/admin/base_admin.html`, `dashboard.html`, `login.html`, `users.html`, `sessions.html`, `subscriptions.html`, `transactions.html`, `tariffs.html`, `api_keys.html`, `logs.html`, `settings.html`, `telegram.html`. Реализованы API и HTML-роуты для метрик, пользователей, тарифов, подписок, транзакций, логов, аудита, API-ключей, управление очередью, maintenance mode, impersonate, Telegram-конфигурация. Все админ-страницы защищены `require_admin`.
+
+**Результат этапа 4 (завершение):** в `main.py` подключены все новые роутеры (`auth`, `user`, `admin`, `tg`, `routes.admin`). Этап полностью выполнен.
+
+---
+
+## Этап 5. Бэкенд: Интеграция ASR, мониторинга, rate limiting и пользователей [x]
+
+**Задача:** Связать существующий ASR-конвейер с БД, авторизацией и лимитами.
+
+### Привязка ASR-сессий к пользователям
+- HTTP endpoints (`/api/v1/asr/url`, `/api/v1/asr/file`): извлекать `current_user` из JWT/API Key и записывать `user_id` в `ASRSession`.
+- Интегрировать создание `ASRSession` в `Recognizer/engine/file_recognition.py` и `services/asr_pipeline.py`.
+- WebSocket `/api/v1/asr/ws`: после auth-фрейма записывать `user_id` в `AudioSession` (`services/ws_session.py`) и `ConnectionMeta` (`services/ws_manager.py`). Если auth не пришёл в течение 5 сек — `close(1008)`.
+- Сохранять `result_json` в `ASRSession` после завершения обработки (в `do_sensitizing`/`process_file`).
+
+### Rate limiting
+- **Стратегия:** по количеству запросов в минуту на основе тарифа (`Plan.max_requests_per_minute`).
+- **Реализация:** `RateLimitMiddleware` в `main.py` или dependency `check_rate_limit`. Хранилище счётчиков — `RedisStateStore` (предпочтительно) или `InMemoryStateStore` (для single-node).
+- **Ключ лимита:** `rate_limit:{user_id}` или `rate_limit:{api_key_hash}`.
+- **Ответ при превышении:** `429 Too Many Requests` с заголовком `Retry-After`.
+- **Исключения:** админы и superadmin не подлежат rate limiting.
+
+### Сбор метрик в БД и Prometheus
+- Фоновая задача (`asyncio` background task или APScheduler) — писать срезы метрик из `SystemMetricsCollector` в таблицу `SystemLog` каждые 30 сек.
+- Опционально: интеграция с `prometheus-client` + endpoint `/metrics` для Grafana.
+
+### WebSocket для админов
+- Endpoint `/api/v1/admin/ws`.
+- **Auth:** первый фрейм `{"type":"auth","access_token":"..."}` → проверка `require_admin`.
+- При успешной авторизации — отправка текущего статуса, затем push каждые 5 сек (или по событию) из `SystemMetricsCollector`.
+- **Формат сообщений:**
+  ```json
+  { "type": "metrics", "data": {...} }
+  { "type": "alert", "data": {...} }
+  ```
+- Отображение в `admin/dashboard` (виджет System Health).
+
+**Результат этапа 5:** созданы `core/middleware.py` (RateLimitMiddleware с maintenance mode, 429 + Retry-After), `services/metrics_reporter.py` (фоновая запись метрик в `SystemLog` каждые 30 сек), `api/v1/endpoints/admin_ws.py` (WebSocket `/api/v1/admin/ws` с auth фреймом и push метрик каждые 5 сек). В `api/v1/endpoints/asr_ws.py` добавлена обязательная WS-аутентификация (auth фрейм, таймаут 5 сек, привязка `user_id` к `AudioSession`) и создание/обновление `ASRSession` в БД с `result_json`. Все компоненты подключены в `main.py`.
+
+**Для полной привязки ASR-сессий к `user_id` в HTTP endpoints** необходимо добавить в чат и отредактировать: `services/asr_pipeline.py`, `Recognizer/engine/file_recognition.py`.
+
+---
+
+## Этап 6. Фронтенд: Пользовательский кабинет (Jinja2 + JS)
+
+**Задача:** Создать серверно-рендеримые страницы для конечных пользователей с единой дизайн-системой, авторизацией через JWT и поддержкой Telegram Web App.
+
+### Шаг 6.0. Инфраструктура (фундамент) [x]
+**Цель:** Создать JS-ядро, CSS-переменные и базовые layout'ы, которые будут использоваться во всех страницах.
+
+| Файл | Действие |
+|------|----------|
+| `static/css/design-system.css` | Создать. CSS-переменные: `--color-bg: #0f172a`, `--color-surface: #1e293b`, `--color-primary: #3b82f6`, `--color-text: #e2e8f0`, `--color-muted: #94a3b8`, `--color-success: #22c55e`, `--color-warning: #f59e0b`, `--color-danger: #ef4444`. Тёмная тема по умолчанию. Утилиты: `.card`, `.btn`, `.btn-primary`, `.btn-danger`, `.btn-ghost`, `.form-group`, `.input`, `.badge`, `.skeleton`, `.toast-container`, `.spinner`. |
+| `static/js/auth.js` | Создать. Модуль с замыканием: `let _token = null;`. Функции: `setAccessToken(t)`, `getAccessToken()`, `clearAuth()`, `apiFetch(url, opts)` — автоподстановка `Authorization: Bearer`, автоматический `/auth/refresh` при 401, редирект на `/login` при неудаче refresh, обработка 403. Функция `initAuth()` — вызывается на каждой странице, проверяет наличие токена. |
+| `static/js/ui.js` | Создать. `toast(msg, type='info', duration=5000)` — fixed-контейнер в правом верхнем углу, auto-dismiss с прогресс-баром. `confirmDialog(title, text, onConfirm)` — нативный `<dialog>`, не `window.confirm()`. `setLoading(element, isLoading)` — добавляет/убирает `.spinner` и `disabled`. `formatDate(iso)`, `formatBytes(bytes)`, `formatDuration(sec)`. |
+| `templates/base.html` | Создать. Блоки: `title`, `head`, `nav`, `content`, `scripts`. Подключение `design-system.css`, `auth.js`, `ui.js`. CSRF-токен в `<meta name="csrf-token" content="{{ csrf_token }}">`. Навигация: логотип, ссылки (если авторизован: Dashboard, ASR, History, Subscription, Profile, Logout), иначе (Login, Register). |
+| `templates/user/base_user.html` | Создать. Наследует `base.html`. Добавляет боковое меню пользователя (Desktop: sidebar 240px, Mobile: bottom tab-bar или hamburger). Подсветка активного пункта через `request.url.path`. Блок `user_content`. |
+| `main.py` (или роуты) | Добавить HTML-роуты: `GET /login`, `GET /register`, `GET /dashboard`, `GET /asr`, `GET /history`, `GET /history/{id}`, `GET /subscription`, `GET /profile`, `GET /api-keys`. Все защищены `require_auth`, кроме `/login` и `/register`. |
+
+**Контракт apiFetch:**
+```javascript
+// При 401 делает POST /api/v1/auth/refresh, затем retry исходного запроса
+// При неудаче refresh — clearAuth() + window.location.href = '/login'
+// Всегда добавляет header Authorization: Bearer <token>
+// Возвращает Promise<Response>
+```
+
+**Результат шага 6.0:** созданы `static/css/design-system.css`, `static/js/auth.js`, `static/js/ui.js`, `templates/base.html`, `templates/user/base_user.html`, `routes/user.py`. В `main.py` подключены HTML-роуты пользовательского кабинета.
+
+### Шаг 6.1. Аутентификация (Login / Register) [x]
+**Цель:** Страницы входа и регистрации, которые получают access token и сохраняют его в auth.js.
+
+| Файл | Действие |
+|------|----------|
+| `templates/auth/login.html` | Наследует `base.html` (без user-меню). Центрированная карточка. Поля: email, password. Кнопка «Войти». Ссылка на регистрацию. JS: `handleLogin` — `fetch('/api/v1/auth/login', {credentials:'include'})`, при успехе сохраняет `access_token` через `setAccessToken()`, редирект на `/dashboard`. Ошибки — `toast()` под формой. |
+| `templates/auth/register.html` | Аналогично. Поля: email, password, full_name. После регистрации — автоматический вход или редирект на `/login` с `toast('Регистрация успешна')`. |
+
+**Важно:** Формы отправляются через обычный `fetch` (не HTMX), т.к. нужно программно сохранить токен из JSON-ответа.
+
+**Результат шага 6.1:** созданы `templates/auth/login.html` и `templates/auth/register.html`. Обе страницы наследуют `base.html`, используют `auth.js` (setAccessToken) и `ui.js` (toast, setLoading). При успешном входе/регистрации — редирект на `/dashboard`.
+
+### Шаг 6.2. Dashboard (главная панель) [x]
+**Цель:** Обзорная страница с квотой, статистикой и быстрыми действиями.
+
+| Файл | Действие |
+|------|----------|
+| `templates/user/dashboard.html` | Наследует `user/base_user.html`. Сетка виджетов (grid 1-4 колонки). Виджеты: (1) Текущий тариф (badge), остаток квоты; (2) Статистика за месяц (количество сессий, минут аудио); (3) Последние 5 сессий (мини-таблица, загружается через `apiFetch`); (4) Быстрые ссылки (кнопки: «Новое распознавание», «История», «API-ключи»). |
+
+**UX:**
+- Загрузка: skeleton-заглушки в виджетах, не спиннер на весь экран.
+- Ошибка: toast + retry-кнопка на виджете.
+- Пустое состояние: «Нет сессий. Начните с ASR» с иконкой.
+
+**Результат шага 6.2:** создан `templates/user/dashboard.html`. Виджеты загружают данные через `Auth.apiFetch` с `/api/v1/user/quota`, `/api/v1/user/stats`, `/api/v1/user/sessions?limit=5`. Skeleton-заглушки заменяются на контент при загрузке. При ошибке — toast + кнопка повтора. Пустое состояние — ссылка на `/asr`.
+
+### Шаг 6.3. ASR-интерфейс (самый сложный) [x]
+**Цель:** Перенести весь функционал `templates/index.html` (legacy demo) в авторизованный интерфейс с современным UX.
+
+| Файл | Действие |
+|------|----------|
+| `static/js/asr_client.js` | Создать. Класс `ASRClient`. Методы: `connect(authToken, config)` — открывает WS `/api/v1/asr/ws`, отправляет auth-фрейм, затем config. `sendAudioChunk(base64Chunk, seqNum)` — отправляет `{"type":"audio_chunk",...}`. `sendEOS()` — конец потока. `onPartial(cb)`, `onFinal(cb)`, `onError(cb)`, `disconnect()`. Reconnect с exponential backoff (1с, 2с, 4с, max 30с). |
+| `templates/user/asr.html` | Наследует `user/base_user.html`. Три вкладки/секции: (1) «По ссылке» — input URL + чекбоксы (keep_raw, do_echo_clearing, do_dialogue, do_punctuation) + кнопка «Отправить». Результат — карточка с текстом. (2) «Загрузка файла (POST)» — drag-and-drop зона + чекбоксы (do_diarization, diar_vad_sensity) + кнопка. Прогресс загрузки. (3) «WebSocket (WAV)» — input file (только .wav) + чекбоксы (ws_do_dialogue, ws_do_punctuation, ws_use_base64) + кнопка «Отправить». Область результата с partial/final текстом. |
+
+**UX-детали:**
+- **Drag-and-drop:** зона с пунктирной рамкой, подсветка при dragover, иконка загрузки. Файл можно бросить на любую из трёх секций (определяет тип обработки).
+- **WebSocket:** индикатор статуса соединения (dot: красный/жёлтый/зелёный). Кнопка «Стоп» для прерывания.
+- **Результат:** текстовая область с кнопкой «Копировать» и «Скачать .txt». Для WS — накопление partial-результатов с таймкодами.
+- **История рядом:** под основным блоком — последние 5 сессий пользователя (загружается через `apiFetch`), клик переходит на `/history/{id}`.
+
+**Адаптация из `index.html`:**
+- Скопировать логику `readWavHeader`, `arrayBufferToBase64`, `sendChannel`, `sendAllChannels` из `index.html` в `asr_client.js`.
+- Сохранить все существующие чекбоксы и их логику.
+- Добавить `channel_name` как в оригинале.
+
+**Результат шага 6.3:** созданы `static/js/asr_client.js` (класс ASRClient с reconnect, auth-фрейм, partial/final/error коллбеки) и `templates/user/asr.html` (три вкладки: URL, POST-файл с drag-and-drop, WS WAV с индикатором статуса и кнопкой Стоп). Все секции используют `Auth.apiFetch` и `UI.toast`. История сессий подгружается под блоком ASR.
+
+### Шаг 6.4. История сессий [x]
+**Цель:** Таблица с пагинацией, фильтрами и деталями.
+
+| Файл | Действие |
+|------|----------|
+| `templates/user/history.html` | Наследует `user/base_user.html`. Фильтры: дата (с/по), тип (url/file/websocket), статус. Таблица: дата, тип, длительность, статус (badge), действия (детали, скачать JSON). Пагинация: «Загрузить ещё» (кнопка) или номера страниц. `apiFetch` + JS для сложной фильтрации. |
+| `templates/user/history_detail.html` | Наследует `user/base_user.html`. Карточка с метаданными (дата, тип, длительность, IP). Блок результата: pretty-printed JSON в `<pre>` с подсветкой синтаксиса (можно просто CSS) или текст распознавания. Кнопки: «Скачать JSON», «Скачать TXT», «Назад к истории». |
+
+**UX:**
+- **Статусы:** completed (зелёный), processing (жёлтый пульсирующий), failed (красный).
+- **Скелетон** при загрузке.
+- **Empty state:** иконка + «Нет сессий. Перейдите в ASR».
+
+**Результат шага 6.4:** созданы `templates/user/history.html` и `templates/user/history_detail.html`. Реализованы фильтры по типу/статусу, пагинация «Загрузить ещё», skeleton, empty state, детали сессии с pretty JSON и кнопками скачивания.
+
+### Шаг 6.5. Подписка, профиль, API-ключи [x]
+**Цель:** CRUD-страницы для управления аккаунтом.
+
+| Файл | Действие |
+|------|----------|
+| `templates/user/subscription.html` | Текущий тариф (карточка), дата окончания, auto-renew (toggle). Список доступных тарифов (карточки с ценой, кнопка «Выбрать» — заглушка до интеграции ЮKassa). История платежей (мини-таблица). |
+| `templates/user/profile.html` | Форма: full_name (редактируемое), email (read-only или с верификацией), смена пароля (old + new + confirm). Кнопка «Удалить аккаунт» — `confirmDialog` + soft-delete. |
+| `templates/user/api_keys.html` | Таблица ключей: имя, префикс (последние 4 символа), дата создания, last_used_at, статус. Кнопка «Создать ключ» — модальное окно с именем. При создании: показать ключ один раз в модалке с кнопкой «Копировать». Кнопка «Отозвать» — `confirmDialog`. |
+
+**UX:** [не валидировано - требуется регистрация]
+- **API-ключ при создании:** модалка с жёлтым предупреждением «Скопируйте сейчас, ключ больше не будет показан».
+- **Профиль:** inline-валидация (minlength для пароля).
+
+**Результат шага 6.5:** созданы `templates/user/subscription.html`, `templates/user/profile.html`, `templates/user/api_keys.html`. Все страницы наследуют `user/base_user.html`, используют `Auth.apiFetch` и `UI.toast`/`UI.confirmDialog`.
+
+### Шаг 6.6. Telegram Web App
+**Цель:** Адаптация интерфейса под TG Web App с нативными кнопками.
+
+| Файл | Действие |
+|------|----------|
+| `templates/tg/base_tg.html` | Создать. Минимальный layout: подключение `telegram-web-app.js`, `Telegram.WebApp.expand()`, viewport meta, цвета темы из `Telegram.WebApp.themeParams`. Нет бокового меню — только экраны. |
+| `templates/tg/index.html` | Изменить существующий. Экран входа: кнопка «Войти через Telegram» (отправка initData на `/api/v1/auth/telegram`), затем редирект на `/tg/asr`. |
+| `templates/tg/asr.html` | Создать. Упрощённый ASR: только загрузка файла (drag-and-drop не нужен, используем нативный input). `Telegram.WebApp.MainButton.setText('Распознать')` — запускает отправку. `MainButton.show()` при выборе файла. Результат — в блоке + кнопка «Поделиться». |
+| `templates/tg/history.html` | Создать. Список сессий (карточки, не таблица). `BackButton` для возврата. |
+| `templates/tg/profile.html` | Создать. Квота, тариф, кнопка «Закрыть» (`Telegram.WebApp.close()`). |
+| `static/js/tg_app.js` | Создать. Инициализация TG, обработка `themeChanged`, управление `MainButton`/`BackButton`. |
+
+---
+
+## Этап 7. Фронтенд: Админ-панель (Jinja2 + JS)
+
+**Задача:** Доработать серверно-рендеримый интерфейс администрирования с единой дизайн-системой, real-time мониторингом и полноценным CRUD.
+
+### Шаг 7.0. Инфраструктура админки
+**Цель:** Унифицировать UX админки с пользовательским фронтом.
+
+| Файл | Действие |
+|------|----------|
+| `static/js/admin_ui.js` | Создать. Расширяет `ui.js`: `adminToast`, `adminConfirm`, `renderBadge(status)`, `renderDate(iso)`. Функция `initAdmin()` — проверка роли admin при загрузке. |
+| `templates/admin/base_admin.html` | Изменить. Подключить `design-system.css` (для единых переменных), `admin_ui.js`. Добавить `<div id="toast-container">`. Добавить CSRF-meta. |
+
+### Шаг 7.1. Dashboard — real-time + история метрик
+**Цель:** Заменить статический fetch на живой мониторинг.
+
+| Файл | Действие |
+|------|----------|
+| `templates/admin/dashboard.html` | Изменить. (1) Виджеты системных метрик подключаются к `/api/v1/admin/ws` (WebSocket с auth-фреймом). Данные обновляются в реальном времени. (2) Добавить Chart.js график «История нагрузки за 24ч»: endpoint `/api/v1/admin/metrics/history?range=24h` (заменить заглушку на реальную выборку из `SystemLog` за последние 24 часа, агрегируя по 5-минутным интервалам). |
+| `static/js/admin_dashboard.js` | Создать. WS-клиент для `/api/v1/admin/ws`: подключение, auth-фрейм, heartbeat (ping каждые 30с), обработка `status_response`, обновление DOM-виджетов, reconnect. Алерты: если `gpu_utilization > 90` или `queue_depth > 50` — показать баннер «Высокая нагрузка». |
+
+**Бэкенд (если нужно):**
+- Реализовать `/api/v1/admin/metrics/history` — выборка из `SystemLog` где `component = 'metrics'` и `created_at > now - range`, группировка по временным слотам.
+
+### Шаг 7.2. CRUD тарифов
+**Цель:** Заменить readonly-таблицу на полноценное управление.
+
+| Файл | Действие |
+|------|----------|
+| `templates/admin/tariffs.html` | Изменить. Добавить кнопку «Создать тариф». Таблица: код, название, лимит запросов, лимит аудио, цена, статус. Действия: редактировать, деактивировать. |
+| `templates/admin/components/tariff_modal.html` | Создать. `<dialog>` с формой: code, name, max_requests_per_minute, max_audio_duration_sec, price_per_month, is_active (toggle). Отправка через `fetch` (POST/PUT). При успехе — закрытие модалки + обновление таблицы. |
+
+**UX:**
+- При деактивации — `confirmDialog` («Деактивировать тариф "Базовый"? Существующие подписки останутся активными»).
+- Валидация: code — уникальный, латиница + underscore.
+
+### Шаг 7.3. Детали пользователя
+**Цель:** Страница детального просмотра и редактирования.
+
+| Файл | Действие |
+|------|----------|
+| `templates/admin/user_detail.html` | Создать. Роут `/admin/users/{id}`. Карточка пользователя: email, имя, роль (select: user/admin/superadmin), статус (toggle is_active), telegram, дата регистрации. Кнопки: «Сохранить», «Войти как пользователь» (impersonate, superadmin only), «Блокировать». Таблица сессий пользователя (последние 20, с пагинацией). Таблица подписок. |
+| `templates/admin/users.html` | Изменить. Сделать строки кликабельными (переход на `/admin/users/{id}`). |
+
+**UX:**
+- **Impersonate:** кнопка видна только superadmin, при клике — получение токена и открытие `/dashboard` в новой вкладке от имени пользователя.
+- **Блокировка:** `confirmDialog` + soft-delete.
+
+### Шаг 7.4. Мониторинг сессий
+**Цель:** Заменить заглушку `/admin/sessions` на реальные данные.
+
+| Файл | Действие |
+|------|----------|
+| `templates/admin/sessions.html` | Изменить. Таблица активных ASR-сессий: ID, пользователь (email), тип, статус, длительность аудио, начало. Кнопка «Отключить WS» (для websocket-сессий) — вызов `/api/v1/admin/users/{uid}/sessions/{sid}/disconnect`. Автообновление каждые 10 сек через `apiFetch`. |
+
+**Бэкенд (если нужно):**
+- Реализовать хранение активных WS-сессий в `ConnectionMeta` с возможностью их перечисления и закрытия.
+
+### Шаг 7.5. UX/UI полировка всех админ-страниц
+**Цель:** Единообразие, состояния, обработка ошибок.
+
+| Файл | Действие |
+|------|----------|
+| `templates/admin/users.html` | Добавить skeleton при загрузке. Поиск с debounce (300мс). Фильтры по роли/статусу (табы). Empty state. |
+| `templates/admin/subscriptions.html` | Добавить фильтры по статусу и тарифу. Кнопки «Продлить»/«Отменить» с `confirmDialog`. |
+| `templates/admin/transactions.html` | Добавить фильтр по статусу. |
+| `templates/admin/logs.html` | Добавить фильтры по level (info/warning/error) и component. Live-обновление (опционально). |
+| `templates/admin/api_keys.html` | Добавить поиск по user_id/email. |
+| `templates/admin/settings.html` | Maintenance mode toggle — добавить состояние loading на кнопку, toast при успехе. |
+
+**Общие правила для всех админ-страниц:**
+- Все кнопки, вызывающие `fetch`, имеют состояние loading (спиннер + disabled).
+- Все опасные действия (delete, cancel, block) требуют `confirmDialog`.
+- Все ошибки API отображаются через toast (красный).
+- Все успешные действия — toast (зелёный).
+- Таблицы: hover-эффект на строках, сортировка по клику на заголовок (если применимо).
+
+---
+
+## Этап 8. Интеграция и тестирование
+
+**Задача:** Собрать всё вместе и проверить работоспособность.
+
+### Middleware и CORS
+- Настроить CORS для разрешённых origin (фронтенд на том же домене — CORS минимален).
+- Middleware логирования запросов (с `request_id`).
+- `RateLimitMiddleware` в `main.py` с разными лимитами для `user`/`admin`/`api_key`.
+
+### Обработка ошибок
+- Единый формат ошибок API:
+  ```json
+  { "detail": "...", "code": "..." }
+  ```
+- Расширить `core/exception_handlers.py` для новых исключений (RateLimitExceededException и т.д.).
+- Отображение ошибок на Jinja-страницах через toast-уведомления (`static/js/ui.js`).
+
+### Тестирование
+- **Unit:** auth endpoints, admin CRUD, tariff CRUD, API Key validation (`pytest`).
+- **Интеграционные:** регистрация → логин → создание API ключа → распознавание через API key → просмотр истории.
+- **WebSocket:** 
+  - ASR WS: подключение → auth фрейм → config → audio → результат.
+  - Admin WS: подключение → auth фрейм → получение метрик.
+  - Heartbeat: проверка `ping`/`pong`.
+- **Rate limiting:** превышение лимита → `429` с `Retry-After`.
+- **Роли:** пользователь не может зайти в `/admin`, админ видит все данные, superadmin может имперсонировать.
+- **Платежи:** эмуляция webhook ЮKassa (тестовый shopId).
+- **Аудит:** проверка записей в `AdminAuditLog` после действий админа.
+
+### Документация API
+- Обновить OpenAPI (Swagger UI) — теги: `auth`, `user`, `admin`, `asr`, `payments`, `api-keys`.
+- Добавить примеры запросов/ответов для всех новых endpoints.
+
+---
+
+## Этап 9. Деплой и окружение
+
+**Задача:** Подготовить к production.
+
+### Конфигурация
+- Переменные окружения в `.env.example`:
+  - `DATABASE_URL` (PostgreSQL, async)
+  - `REDIS_URL` (rate limiting, refresh token blacklist, WS state кластеризации)
+  - `JWT_SECRET`, `JWT_ACCESS_EXPIRE_MINUTES`, `JWT_REFRESH_EXPIRE_DAYS`
+  - `ADMIN_SECRET_KEY` (для первичного создания superadmin через CLI)
+  - `YOOKASSA_SHOP_ID`, `YOOKASSA_SECRET_KEY`, `YOOKASSA_RETURN_URL`
+  - `RATE_LIMIT_STORAGE` (`redis` или `memory`)
+  - `MAX_FILE_SIZE_MB`, `ALLOWED_AUDIO_TYPES`
+  - `PROMETHEUS_ENABLED` (`true`/`false`)
+  - `TELEGRAM_BOT_TOKEN` (токен бота от @BotFather)
+  - `TELEGRAM_WEBAPP_URL` (публичный URL для Web App, например `https://asr.example.com/tg`)
+  - `TELEGRAM_PAYMENT_PROVIDER_TOKEN` (опционально, для `openInvoice` внутри TG)
+
+### Docker
+- `Dockerfile` — многоэтапная сборка, установка Python-зависимостей, копирование Jinja-шаблонов и статики, `HEALTHCHECK`.
+- `docker-compose.yml` — сервисы: `app`, `postgres`, `redis`, `nginx`.
+- `docker-compose.override.yml` — для локальной разработки (volume mounts, hot reload).
+
+### Nginx
+- Раздача статики (`static/`).
+- Проксирование `/api/v1/*` и WebSocket `Upgrade`.
+- `proxy_read_timeout` / `proxy_send_timeout` для WS (больше 60 сек).
+- SSL/TLS (Let's Encrypt).
+
+### Безопасность
+- **ORM:** защита от SQL-инъекций (SQLAlchemy).
+- **XSS:** CSP заголовок, экранирование в Jinja2 (autoescape).
+- **CSRF:** для форм использовать CSRF-токен в шаблоне (для JWT-форм).
+- **Файлы:** валидация MIME-type и размера до чтения.
+- **API Keys:** хранение только хешей, никогда не возвращать plain key после создания.
+- **WS Auth:** обязательный auth фрейм, таймаут 5 сек на подключение без auth.
+
+---
+
+## Этап 10. Документация и примеры
+
+**Задача:** Подготовить документацию для разработчиков и пользователей API.
+
+### Документация
+- Обновить `README.md`: инструкции по запуску с Docker, переменные окружения, структура проекта.
+- Создать `API_CHANGELOG.md` — изменения API версий.
+- Добавить `docs/auth.md` — описание схемы JWT + API Key.
+- Добавить `docs/payments.md` — интеграция с ЮKassa, обработка webhooks.
+
+### Примеры кода
+- `examples/api_key_usage.py` — пример распознавания файла через API Key.
+- `examples/websocket_client_auth.py` — пример WS-подключения с auth фреймом.
+- Обновить `examples/streaming_client.py` для поддержки авторизации.
+
+### Telegram Web App документация
+- `docs/telegram.md` — инструкция по настройке бота (@BotFather, Web App URL, HMAC-проверка).
+- `examples/tg_webapp_auth.html` — минимальный пример HTML-страницы с авторизацией через `initData`.
+- `examples/tg_bot_webhook.py` — пример FastAPI-обработчика webhook для Telegram-бота.
+
+---
+
+## Чек-лист для aider
+
+Перед началом работы уточнить у пользователя:
+
+- [x] Какой ORM используется (SQLAlchemy, Tortoise, Prisma)?  
+  *(Решение: SQLAlchemy 2.0 + Alembic. БД создаётся с нуля.)*
+- [x] Есть ли Alembic/миграции?  
+  *(Решение: нет, создаём с нуля.)*
+- [x] Какой фронтенд-стек предпочтителен (чистый HTML+JS как в примерах, или Vue/React/HTMX)?  
+  *(Решение: Jinja2 + чистый HTML+JS. Серверный рендеринг шаблонов.)*
+- [x] Где хранить JWT — `localStorage` или `httpOnly` cookie?  
+  *(Решение: Access токен — в памяти (memory), Refresh токен — `httpOnly` `Secure` `SameSite=Strict` cookie. WebSocket: первый фрейм после connect с токеном.)*
+- [x] Нужна ли интеграция с конкретным платёжным провайдером (ЮKassa, Stripe) или пока заглушки?  
+  *(Решение: интеграция с ЮKassa.)*
+- [x] Rate limiting — по количеству запросов или по минутам аудио?  
+  *(Решение: по количеству запросов.)*
+- [x] Нужен ли API-доступ (API keys) или только веб-интерфейс?  
+  *(Решение: нужен API-доступ через API keys.)*
+- [x] Будет ли приложение доступно через Telegram Web App?  
+  *(Решение: да, требуется интеграция с Telegram Bot API, авторизация через `initData`, отдельный мобильный UI.)*
+
+Общие для всех задач правила:
+- Всегда комментируй код
+- /no-commits
+- Выполняя задачу, ставь отметку о её выполнении в этом файле.
+- Выполняя задачу анализируй как изменение плана или результата выполнения влияет на другие задачи и корректируй их и останавливай выполнение задачи, если нужно решение по корректировке от пользователя.
+- Выполняя задачу ты можешь запрашивать у пользователя необходимые файлы.
+- Тебе нужно следить за соответствием моделей в alembic.
+- **Гибридная модель:** HTMX для CRUD-страниц (история, профиль, ключи), чистый JS для WebSocket (ASR, мониторинг).
+- **Единая дизайн-система:** CSS-переменные в `static/css/design-system.css`, общие для user и admin.
+- **Состояния UI:** каждый интерактивный элемент имеет 4 состояния — idle, loading, success, error. Нет `alert()`.
+- **CSS-изоляция:** пользовательские стили в `static/css/design-system.css`, админские доработки — там же через переменные. Не создавай конфликтов с существующими admin-стилями.
+- **JS-изоляция:** глобальные функции только в `ui.js` (toast, confirm). Всё остальное — модули или IIFE.
+- **WebSocket формат:** для всех новых WS-клиентов (admin dashboard, user ASR) использовать строго:
+  ```json
+  {"type":"auth","access_token":"..."}
+  ```
+  сразу после `onopen`, в течение 5 секунд.
+- **Не трогай существующие API endpoints** в `main.py` / роутерах. Только добавляй HTML-роуты.
+- **Не меняй модели SQLAlchemy** (они уже готовы). Используй как есть.
+- **Сохрани `templates/index.html`** (legacy demo) — не удаляй, он используется для `/demo`.
+- **Сохрани `templates/admin/base_admin.html`** — дорабатывай, но не ломай существующую структуру sidebar.

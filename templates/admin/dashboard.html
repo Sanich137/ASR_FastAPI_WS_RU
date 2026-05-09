@@ -1,0 +1,18 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+<div class="card">
+    <p>Загрузка метрик...</p>
+    <canvas id="metricsChart"></canvas>
+</div>
+<script>
+    async function loadMetrics() {
+        const resp = await fetch('/api/v1/admin/metrics');
+        const data = await resp.json();
+        // TODO: отрисовка графиков Chart.js
+        document.querySelector('.card p').textContent = JSON.stringify(data, null, 2);
+    }
+    loadMetrics();
+</script>
+{% endblock %}

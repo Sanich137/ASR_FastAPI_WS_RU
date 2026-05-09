@@ -1,0 +1,132 @@
+{% extends "user/base_user.html" %}
+
+{% block title %}Dashboard — ASR Сервис{% endblock %}
+
+{% block user_content %}
+<div class="container">
+  <h1 style="margin:0 0 24px;">Dashboard</h1>
+  
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;">
+    <!-- Виджет 1: Квота -->
+    <div class="card" id="widget-quota">
+      <div class="skeleton" style="height:80px;"></div>
+    </div>
+    
+    <!-- Виджет 2: Статистика -->
+    <div class="card" id="widget-stats">
+      <div class="skeleton" style="height:80px;"></div>
+    </div>
+    
+    <!-- Виджет 3: Последние сессии -->
+    <div class="card" id="widget-sessions" style="grid-column:1 / -1;">
+      <div class="skeleton" style="height:120px;"></div>
+    </div>
+    
+    <!-- Виджет 4: Быстрые ссылки -->
+    <div class="card" id="widget-links" style="grid-column:1 / -1;">
+      <h3 style="margin:0 0 12px;">Быстрые действия</h3>
+      <div class="flex gap-2">
+        <a href="/asr" class="btn btn-primary">Новое распознавание</a>
+        <a href="/history" class="btn btn-ghost">История</a>
+        <a href="/api-keys" class="btn btn-ghost">API-ключи</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  async function loadQuota() {
+    const el = document.getElementById('widget-quota');
+    try {
+      const resp = await Auth.apiFetch('/api/v1/user/quota');
+      if (!resp.ok) throw new Error('Ошибка загрузки квоты');
+      const data = await resp.json();
+      el.innerHTML = `
+        <div class="flex items-center justify-between" style="margin-bottom:8px;">
+          <span class="text-muted text-sm">Текущий тариф</span>
+          <span class="badge badge-success">${data.plan_name || 'Бесплатный'}</span>
+        </div>
+        <div style="font-size:24px;font-weight:700;">${data.max_requests_per_minute || 0} <span class="text-muted text-sm">запросов/мин</span></div>
+        ${data.max_audio_duration_sec ? `<div class="text-muted text-sm mt-4">Макс. длительность: ${UI.formatDuration(data.max_audio_duration_sec)}</div>` : ''}
+      `;
+    } catch (e) {
+      el.innerHTML = `<div class="text-muted">Не удалось загрузить квоту <button class="btn btn-ghost btn-sm" onclick="loadQuota()">Повторить</button></div>`;
+      UI.toast(e.message, 'error');
+    }
+  }
+
+  async function loadStats() {
+    const el = document.getElementById('widget-stats');
+    try {
+      const resp = await Auth.apiFetch('/api/v1/user/stats');
+      if (!resp.ok) throw new Error('Ошибка загрузки статистики');
+      const data = await resp.json();
+      el.innerHTML = `
+        <div class="flex items-center justify-between" style="margin-bottom:8px;">
+          <span class="text-muted text-sm">Статистика за месяц</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div>
+            <div style="font-size:24px;font-weight:700;">${data.sessions_this_month || 0}</div>
+            <div class="text-muted text-xs">Сессий</div>
+          </div>
+          <div>
+            <div style="font-size:24px;font-weight:700;">${data.total_audio_hours || 0}ч</div>
+            <div class="text-muted text-xs">Аудио</div>
+          </div>
+        </div>
+      `;
+    } catch (e) {
+      el.innerHTML = `<div class="text-muted">Не удалось загрузить статистику <button class="btn btn-ghost btn-sm" onclick="loadStats()">Повторить</button></div>`;
+      UI.toast(e.message, 'error');
+    }
+  }
+
+  async function loadSessions() {
+    const el = document.getElementById('widget-sessions');
+    try {
+      const resp = await Auth.apiFetch('/api/v1/user/sessions?limit=5');
+      if (!resp.ok) throw new Error('Ошибка загрузки сессий');
+      const data = await resp.json();
+      if (!data || data.length === 0) {
+        el.innerHTML = `
+          <h3 style="margin:0 0 12px;">Последние сессии</h3>
+          <div class="text-muted" style="text-align:center;padding:24px;">Нет сессий. Начните с <a href="/asr" style="color:var(--color-primary);">ASR</a></div>
+        `;
+        return;
+      }
+      const rows = data.map(s => `
+        <tr>
+          <td class="text-sm">${UI.formatDate(s.created_at)}</td>
+          <td class="text-sm"><span class="badge badge-${s.status === 'completed' ? 'success' : s.status === 'failed' ? 'danger' : 'warning'}">${s.status}</span></td>
+          <td class="text-sm">${s.session_type}</td>
+          <td class="text-sm">${s.audio_duration_sec ? UI.formatDuration(s.audio_duration_sec) : '-'}</td>
+          <td class="text-sm"><a href="/history/${s.id}" style="color:var(--color-primary);">Открыть</a></td>
+        </tr>
+      `).join('');
+      el.innerHTML = `
+        <h3 style="margin:0 0 12px;">Последние сессии</h3>
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="color:var(--color-muted);font-size:12px;text-align:left;">
+              <th style="padding:8px 0;">Дата</th>
+              <th style="padding:8px 0;">Статус</th>
+              <th style="padding:8px 0;">Тип</th>
+              <th style="padding:8px 0;">Длительность</th>
+              <th style="padding:8px 0;"></th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
+    } catch (e) {
+      el.innerHTML = `<div class="text-muted">Не удалось загрузить сессии <button class="btn btn-ghost btn-sm" onclick="loadSessions()">Повторить</button></div>`;
+      UI.toast(e.message, 'error');
+    }
+  }
+
+  loadQuota();
+  loadStats();
+  loadSessions();
+</script>
+{% endblock %}

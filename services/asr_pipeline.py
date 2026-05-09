@@ -91,6 +91,14 @@ async def process_audio_stream_chunk(
 
         # --- 5. Проверка порога VAD ---
         combined_duration = (session.audio_overlap + session.audio_buffer).duration_seconds
+        logger.debug(
+            "Chunk received for %s: chunk=%.3f sec, buffer=%.3f sec, overlap=%.3f sec, combined=%.3f sec",
+            session.client_id,
+            audiosegment_chunk.duration_seconds,
+            session.audio_buffer.duration_seconds,
+            session.audio_overlap.duration_seconds,
+            combined_duration,
+        )
         if combined_duration < settings.MAX_OVERLAP_DURATION:
             return
 
@@ -110,6 +118,19 @@ async def process_audio_stream_chunk(
             except Exception:
                 pass
             return
+
+        # Fallback: если VAD не перенёс ничего в audio_to_asr, принудительно сливаем весь буфер
+        if not session.audio_to_asr:
+            logger.warning(
+                "VAD produced empty audio_to_asr for %s (buffer=%.3f sec, overlap=%.3f sec). "
+                "Forcing entire buffer to audio_to_asr.",
+                session.client_id,
+                session.audio_buffer.duration_seconds,
+                session.audio_overlap.duration_seconds,
+            )
+            session.audio_to_asr.append(session.audio_buffer)
+            session.audio_overlap = AudioSegment.silent(1, frame_rate=settings.BASE_SAMPLE_RATE)
+            session.audio_buffer = AudioSegment.silent(1, frame_rate=settings.BASE_SAMPLE_RATE)
 
         # --- 6. Распознавание последнего сегмента ---
         if not session.audio_to_asr:
@@ -131,6 +152,14 @@ async def process_audio_stream_chunk(
         finally:
             if metrics_collector is not None:
                 metrics_collector.decrement_tasks()
+
+        logger.debug(
+            "Chunk recognized for %s: segment=%.3f sec, audio_duration=%.3f sec, text='%s'",
+            session.client_id,
+            segment.duration_seconds,
+            session.audio_duration,
+            asr_result_words.get("data", {}).get("text", "")[:50],
+        )
 
         # --- 7. Отправка результата ---
         text = asr_result_words.get("data", {}).get("text", "")
@@ -206,8 +235,15 @@ async def process_final_audio(
     try:
         # --- 1. Объединение остатков ---
         final_audio = session.audio_overlap + session.audio_buffer
-        session.audio_to_asr.append(final_audio)
-        logger.debug("Final audio duration: %.3f sec", final_audio.duration_seconds)
+        if final_audio.duration_seconds > 0.1:
+            session.audio_to_asr.append(final_audio)
+        logger.debug(
+            "Final audio for %s: duration=%.3f sec, audio_to_asr count=%d, audio_duration=%.3f sec",
+            session.client_id,
+            final_audio.duration_seconds,
+            len(session.audio_to_asr),
+            session.audio_duration,
+        )
 
         # --- 2. Дополнение тишиной при необходимости ---
         if final_audio.duration_seconds < 2:
@@ -215,13 +251,19 @@ async def process_final_audio(
             session.audio_to_asr[-1] = final_audio
             logger.debug("Final audio padded with silence to %.3f sec", final_audio.duration_seconds)
 
-        # --- 3. Распознавание ---
+        # --- 3. Распознавание финального остатка ---
         if metrics_collector is not None:
             metrics_collector.increment_tasks()
         try:
             last_asr_result = await simple_recognise(final_audio, recognizer=recognizer)
             last_result = process_single_token_vocab_output(last_asr_result, session.audio_duration)
             session.ws_collected_asr_res[f"channel_{1}"].append(last_result)
+            logger.debug(
+                "Final chunk recognized for %s: final_duration=%.3f sec, time_shift=%.3f sec",
+                session.client_id,
+                final_audio.duration_seconds,
+                session.audio_duration,
+            )
         finally:
             if metrics_collector is not None:
                 metrics_collector.decrement_tasks()

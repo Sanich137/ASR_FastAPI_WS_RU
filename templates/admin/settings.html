@@ -1,0 +1,21 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Настройки{% endblock %}
+{% block content %}
+<h1>Настройки системы</h1>
+<div class="card">
+    <h3>Режим обслуживания</h3>
+    <button onclick="toggleMaintenance()">Переключить</button>
+    <p id="maintStatus">Статус: неизвестно</p>
+</div>
+<script>
+    async function toggleMaintenance() {
+        const resp = await fetch('/api/v1/admin/maintenance', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({enabled: true})
+        });
+        const data = await resp.json();
+        document.getElementById('maintStatus').textContent = data.detail;
+    }
+</script>
+{% endblock %}

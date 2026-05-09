@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="flex h-full" style="min-height:calc(100vh - 57px);">
+  <!-- Sidebar desktop -->
+  <aside class="hidden-md" style="width:240px;background:var(--color-surface);border-right:1px solid var(--color-border);padding:16px;">
+    <nav class="flex flex-col gap-2">
+      <a href="/dashboard" class="nav-item {% if request.url.path == '/dashboard' %}active{% endif %}">Dashboard</a>
+      <a href="/asr" class="nav-item {% if request.url.path == '/asr' %}active{% endif %}">Распознавание</a>
+      <a href="/history" class="nav-item {% if request.url.path == '/history' %}active{% endif %}">История</a>
+      <a href="/subscription" class="nav-item {% if request.url.path == '/subscription' %}active{% endif %}">Подписка</a>
+      <a href="/profile" class="nav-item {% if request.url.path == '/profile' %}active{% endif %}">Профиль</a>
+      <a href="/api-keys" class="nav-item {% if request.url.path == '/api-keys' %}active{% endif %}">API-ключи</a>
+    </nav>
+  </aside>
+
+  <!-- Mobile bottom tab bar -->
+  <nav class="show-md" style="position:fixed;bottom:0;left:0;right:0;background:var(--color-surface);border-top:1px solid var(--color-border);display:flex;justify-content:space-around;padding:8px 0;z-index:100;">
+    <a href="/dashboard" class="nav-item-m {% if request.url.path == '/dashboard' %}active{% endif %}">🏠</a>
+    <a href="/asr" class="nav-item-m {% if request.url.path == '/asr' %}active{% endif %}">🎙</a>
+    <a href="/history" class="nav-item-m {% if request.url.path == '/history' %}active{% endif %}">📋</a>
+    <a href="/profile" class="nav-item-m {% if request.url.path == '/profile' %}active{% endif %}">👤</a>
+  </nav>
+
+  <div style="flex:1;padding:24px;overflow:auto;">
+    {% block user_content %}{% endblock %}
+  </div>
+</div>
+
+<style>
+  .nav-item { display:block;padding:8px 12px;border-radius:var(--radius);color:var(--color-muted);text-decoration:none;font-size:14px; }
+  .nav-item:hover, .nav-item.active { background:rgba(59,130,246,.1);color:var(--color-primary); }
+  .nav-item-m { font-size:20px;padding:4px 12px;border-radius:var(--radius);text-decoration:none; }
+  .nav-item-m.active { background:rgba(59,130,246,.1); }
+  @media (max-width: 768px) {
+    .hidden-md { display:none !important; }
+    .show-md { display:flex !important; }
+    main { padding-bottom: 60px; }
+  }
+  @media (min-width: 769px) {
+    .show-md { display:none !important; }
+  }
+</style>
+{% endblock %}

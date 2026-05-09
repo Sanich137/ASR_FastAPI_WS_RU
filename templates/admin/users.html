@@ -1,0 +1,34 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Пользователи{% endblock %}
+{% block content %}
+<h1>Пользователи</h1>
+<div class="card">
+    <p>Загрузка списка пользователей...</p>
+    <table id="usersTable" border="1" cellpadding="8" style="width:100%;border-collapse:collapse;">
+        <thead>
+            <tr><th>ID</th><th>Email</th><th>Имя</th><th>Роль</th><th>Активен</th><th>Telegram</th><th>Действия</th></tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+</div>
+<script>
+    async function loadUsers() {
+        const resp = await fetch('/api/v1/admin/users');
+        const data = await resp.json();
+        const tbody = document.querySelector('#usersTable tbody');
+        tbody.innerHTML = data.map(u => `
+            <tr>
+                <td>${u.id}</td>
+                <td>${u.email}</td>
+                <td>${u.full_name || ''}</td>
+                <td>${u.role}</td>
+                <td>${u.is_active ? 'Да' : 'Нет'}</td>
+                <td>${u.telegram_linked ? 'Да' : 'Нет'}</td>
+                <td><button onclick="location.href='/admin/users'">Открыть</button></td>
+            </tr>
+        `).join('');
+        document.querySelector('.card p').style.display = 'none';
+    }
+    loadUsers();
+</script>
+{% endblock %}

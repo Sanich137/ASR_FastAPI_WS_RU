@@ -1,0 +1,32 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}API-ключи{% endblock %}
+{% block content %}
+<h1>API-ключи</h1>
+<div class="card">
+    <p>Загрузка ключей...</p>
+    <table id="keysTable" border="1" cellpadding="8" style="width:100%;border-collapse:collapse;">
+        <thead>
+            <tr><th>ID</th><th>Пользователь</th><th>Название</th><th>Активен</th><th>Действия</th></tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+</div>
+<script>
+    async function loadKeys() {
+        const resp = await fetch('/api/v1/admin/api-keys');
+        const data = await resp.json();
+        const tbody = document.querySelector('#keysTable tbody');
+        tbody.innerHTML = data.map(k => `
+            <tr>
+                <td>${k.id}</td>
+                <td>${k.user_id}</td>
+                <td>${k.name}</td>
+                <td>${k.is_active ? 'Да' : 'Нет'}</td>
+                <td><button onclick="alert('Заглушка отзыва')">Отозвать</button></td>
+            </tr>
+        `).join('');
+        document.querySelector('.card p').style.display = 'none';
+    }
+    loadKeys();
+</script>
+{% endblock %}

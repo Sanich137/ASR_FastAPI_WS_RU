@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ASR Monitor</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            padding: 1rem;
+        }
+        h1 {
+            font-size: 1.25rem;
+            margin-bottom: 1rem;
+            color: #94a3b8;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+        .card {
+            background: #1e293b;
+            border-radius: 0.5rem;
+            padding: 0.75rem 1rem;
+            border: 1px solid #334155;
+        }
+        .card-title {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #94a3b8;
+            margin-bottom: 0.25rem;
+        }
+        .value {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #f8fafc;
+        }
+        .badge {
+            display: inline-block;
+            padding: 0.15rem 0.5rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .badge.idle { background: #166534; color: #bbf7d0; }
+        .badge.busy { background: #854d0e; color: #fde047; }
+        .badge.overloaded { background: #7f1d1d; color: #fecaca; }
+        .bar-bg {
+            background: #334155;
+            border-radius: 0.25rem;
+            height: 0.5rem;
+            margin-top: 0.5rem;
+            overflow: hidden;
+        }
+        .bar-fill {
+            background: #38bdf8;
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        .log {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 0.5rem;
+            padding: 0.75rem;
+            height: 220px;
+            overflow-y: auto;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.75rem;
+            line-height: 1.4;
+        }
+        .log-entry { margin-bottom: 0.25rem; color: #cbd5e1; }
+        .log-entry .ts { color: #64748b; margin-right: 0.5rem; }
+        .status-line {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            font-size: 0.8rem;
+            color: #94a3b8;
+        }
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #64748b;
+        }
+        .dot.connected { background: #22c55e; }
+        .dot.connecting { background: #f59e0b; animation: pulse 1s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body>
+    <h1>ASR Adapter Monitor</h1>
+    <div class="status-line">
+        <div id="conn-dot" class="dot"></div>
+        <span id="conn-text">Отключено</span>
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <div class="card-title">Adapter Status</div>
+            <div class="value" id="adapter-status">—</div>
+        </div>
+        <div class="card">
+            <div class="card-title">Active Tasks</div>
+            <div class="value" id="active-tasks">—</div>
+        </div>
+        <div class="card">
+            <div class="card-title">Connections</div>
+            <div class="value" id="connections">—</div>
+        </div>
+        <div class="card">
+            <div class="card-title">Uptime</div>
+            <div class="value" id="uptime">—</div>
+        </div>
+        <div class="card">
+            <div class="card-title">GPU Memory</div>
+            <div class="value" id="gpu-mem">—</div>
+            <div class="bar-bg"><div class="bar-fill" id="gpu-mem-bar"></div></div>
+        </div>
+        <div class="card">
+            <div class="card-title">GPU Utilization</div>
+            <div class="value" id="gpu-util">—</div>
+            <div class="bar-bg"><div class="bar-fill" id="gpu-util-bar"></div></div>
+        </div>
+        <div class="card">
+            <div class="card-title">CPU Memory</div>
+            <div class="value" id="cpu-mem">—</div>
+            <div class="bar-bg"><div class="bar-fill" id="cpu-mem-bar"></div></div>
+        </div>
+        <div class="card">
+            <div class="card-title">CPU Utilization</div>
+            <div class="value" id="cpu-util">—</div>
+            <div class="bar-bg"><div class="bar-fill" id="cpu-util-bar"></div></div>
+        </div>
+        <div class="card">
+            <div class="card-title">Queue Depth</div>
+            <div class="value" id="queue-depth">—</div>
+        </div>
+        <div class="card">
+            <div class="card-title">Temperature</div>
+            <div class="value" id="temperature">—</div>
+        </div>
+    </div>
+
+    <div class="card-title" style="margin-bottom:0.5rem;">Event Log (last 20)</div>
+    <div class="log" id="log"></div>
+
+    <script>
+        const wsUrl = `ws://${window.location.host}/api/v1/asr/ws`;
+        let ws = null;
+        let reconnectTimer = null;
+        let heartbeatTimer = null;
+        const logEl = document.getElementById('log');
+        const connDot = document.getElementById('conn-dot');
+        const connText = document.getElementById('conn-text');
+
+        function setConnected(state) {
+            if (state === 'connected') {
+                connDot.className = 'dot connected';
+                connText.textContent = 'Подключено (push-статус)';
+            } else if (state === 'connecting') {
+                connDot.className = 'dot connecting';
+                connText.textContent = 'Подключение...';
+            } else {
+                connDot.className = 'dot';
+                connText.textContent = 'Отключено';
+            }
+        }
+
+        function addLog(msg) {
+            const ts = new Date().toLocaleTimeString();
+            const line = document.createElement('div');
+            line.className = 'log-entry';
+            line.innerHTML = `<span class="ts">${ts}</span>${msg}`;
+            logEl.prepend(line);
+            while (logEl.children.length > 20) {
+                logEl.lastChild.remove();
+            }
+        }
+
+        function updateBar(id, used, total) {
+            const bar = document.getElementById(id);
+            let pct = 0;
+            if (total && total > 0) {
+                pct = Math.min(100, Math.max(0, (used / total) * 100));
+            }
+            bar.style.width = pct + '%';
+            if (pct > 90) bar.style.background = '#ef4444';
+            else if (pct > 70) bar.style.background = '#f59e0b';
+            else bar.style.background = '#38bdf8';
+        }
+
+        function updateStatus(data) {
+            const statusEl = document.getElementById('adapter-status');
+            const status = data.adapter_status || 'idle';
+            statusEl.innerHTML = `<span class="badge ${status}">${status}</span>`;
+
+            document.getElementById('active-tasks').textContent = data.active_tasks_count ?? '—';
+            document.getElementById('connections').textContent = data.active_connections_count ?? '—';
+            document.getElementById('queue-depth').textContent = data.queue_depth ?? '—';
+            document.getElementById('uptime').textContent = data.uptime_formatted || '—';
+            document.getElementById('temperature').textContent =
+                data.temperature_celsius != null ? `${data.temperature_celsius} °C` : '—';
+
+            const gpuFree = data.gpu_memory_free_mb;
+            const gpuTotal = data.gpu_memory_total_mb;
+            document.getElementById('gpu-mem').textContent =
+                (gpuFree != null && gpuTotal != null) ? `${gpuFree} / ${gpuTotal} MB` : '—';
+            updateBar('gpu-mem-bar', gpuTotal - gpuFree, gpuTotal);
+
+            const gpuUtil = data.gpu_utilization_percent;
+            document.getElementById('gpu-util').textContent = gpuUtil != null ? `${gpuUtil.toFixed(1)} %` : '—';
+            updateBar('gpu-util-bar', gpuUtil, 100);
+
+            const cpuFree = data.cpu_memory_free_mb;
+            const cpuTotal = data.cpu_memory_total_mb;
+            document.getElementById('cpu-mem').textContent =
+                (cpuFree != null && cpuTotal != null) ? `${cpuFree} / ${cpuTotal} MB` : '—';
+            updateBar('cpu-mem-bar', cpuTotal - cpuFree, cpuTotal);
+
+            const cpuUtil = data.cpu_utilization_percent;
+            document.getElementById('cpu-util').textContent = cpuUtil != null ? `${cpuUtil.toFixed(1)} %` : '—';
+            updateBar('cpu-util-bar', cpuUtil, 100);
+
+            addLog(`status: ${status} | tasks=${data.active_tasks_count ?? '-'} | conn=${data.active_connections_count ?? '-'}`);
+        }
+
+        function connect() {
+            setConnected('connecting');
+            clearInterval(heartbeatTimer);
+            heartbeatTimer = null;
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                setConnected('connected');
+                addLog('WS открыт');
+                // Heartbeat: предотвращаем idle_timeout на сервере
+                clearInterval(heartbeatTimer);
+                heartbeatTimer = setInterval(() => {
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: 'ping' }));
+                    }
+                }, 30000);
+                // Отправляем status_request — сервер включит subscribe_status и сразу пришлёт статус
+                ws.send(JSON.stringify({ type: 'status_request', command: 'get_status' }));
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+                    if (msg.type === 'status_response') {
+                        updateStatus(msg);
+                    } else if (msg.type === 'error') {
+                        addLog(`error: ${msg.code} — ${msg.message}`);
+                    }
+                } catch (e) {
+                    addLog('parse error: ' + e.message);
+                }
+            };
+
+            ws.onclose = () => {
+                setConnected('disconnected');
+                addLog('WS закрыт, переподключение через 3 сек...');
+                ws = null;
+                clearTimeout(reconnectTimer);
+                clearInterval(heartbeatTimer);
+                heartbeatTimer = null;
+                reconnectTimer = setTimeout(connect, 3000);
+            };
+
+            ws.onerror = (err) => {
+                addLog('WS ошибка');
+                clearInterval(heartbeatTimer);
+                heartbeatTimer = null;
+                ws.close();
+            };
+        }
+
+        connect();
+    </script>
+</body>
+</html>

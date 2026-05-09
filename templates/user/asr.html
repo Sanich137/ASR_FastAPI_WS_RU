@@ -1,0 +1,145 @@
+{% extends "user/base_user.html" %}
+
+{% block title %}ASR — Распознавание{% endblock %}
+
+{% block user_content %}
+<div class="container">
+  <h1 style="margin:0 0 24px;">Распознавание речи</h1>
+  {% if not user %}
+  <div class="card" style="border-left:4px solid var(--color-warning);margin-bottom:16px;">
+    <div class="flex items-center gap-4">
+      <span style="font-size:20px;">👋</span>
+      <div>
+        <div style="font-weight:600;">Гостевой режим</div>
+        <div class="text-sm text-muted">Вы можете распознавать аудио без регистрации (лимит 10 запросов/сутки). <a href="/register" style="color:var(--color-primary);">Зарегистрируйтесь</a>, чтобы сохранять историю и увеличить лимиты.</div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Вкладки -->
+  <div class="flex gap-2 mb-4" style="border-bottom:1px solid var(--color-border);">
+    <button class="btn btn-ghost tab-btn active" onclick="switchTab('url')" id="tab-url">По ссылке</button>
+    <button class="btn btn-ghost tab-btn" onclick="switchTab('file')" id="tab-file">Загрузка файла</button>
+    <button class="btn btn-ghost tab-btn" onclick="switchTab('ws')" id="tab-ws">WebSocket (WAV)</button>
+  </div>
+
+  <!-- Секция 1: URL -->
+  <div id="panel-url" class="tab-panel">
+    <div class="card">
+      <div class="form-group">
+        <label>Ссылка на аудио</label>
+        <input type="url" id="urlInput" class="input" placeholder="https://example.com/audio.mp3">
+      </div>
+      <div class="flex gap-4 mb-4" style="flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="checkbox" id="url_keep_raw" checked> Сохранить сырые данные
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="checkbox" id="url_do_echo"> Убрать эхо
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="checkbox" id="url_do_dialogue"> Диалог
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="checkbox" id="url_do_punct"> Пунктуация
+        </label>
+      </div>
+      <button class="btn btn-primary" id="btnUrl" onclick="sendUrl()">Отправить</button>
+      <div id="urlResult" class="mt-4" style="display:none;">
+        <div class="card" style="background:var(--color-bg);">
+          <pre id="urlResultText" style="white-space:pre-wrap;word-break:break-word;"></pre>
+          <div class="flex gap-2 mt-4">
+            <button class="btn btn-ghost btn-sm" onclick="copyText('urlResultText')">Копировать</button>
+            <button class="btn btn-ghost btn-sm" onclick="downloadText('urlResultText','result.txt')">Скачать .txt</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Секция 2: Файл (POST) -->
+  <div id="panel-file" class="tab-panel" style="display:none;">
+    <div class="card">
+      <div id="dropZone" class="flex flex-col items-center justify-center gap-4"
+           style="border:2px dashed var(--color-border);border-radius:var(--radius);padding:48px 24px;cursor:pointer;transition:border-color .2s;"
+           ondragover="event.preventDefault();this.style.borderColor='var(--color-primary)';"
+           ondragleave="this.style.borderColor='var(--color-border)';"
+           ondrop="handleDrop(event)">
+        <div style="font-size:32px;">📁</div>
+        <p class="text-muted">Перетащите файл сюда или <span style="color:var(--color-primary);text-decoration:underline;">выберите</span></p>
+        <input type="file" id="fileInput" style="display:none;" onchange="handleFileSelect(this.files[0])">
+      </div>
+      <div class="flex gap-4 mb-4 mt-4" style="flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="checkbox" id="file_keep_raw" checked> Сохранить сырые данные
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="checkbox" id="file_do_dialogue"> Строить диалог
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="checkbox" id="file_do_diar"> Диаризация
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="checkbox" id="file_do_punct"> Пунктуация
+        </label>
+      </div>
+      <button class="btn btn-primary w-full" id="btnFile" onclick="sendFile()" disabled>Отправить</button>
+      <div id="fileProgress" class="mt-4 text-muted text-sm" style="display:none;">Загрузка...</div>
+      <div id="fileResult" class="mt-4" style="display:none;">
+        <div class="card" style="background:var(--color-bg);">
+          <pre id="fileResultText" style="white-space:pre-wrap;word-break:break-word;"></pre>
+          <div class="flex gap-2 mt-4">
+            <button class="btn btn-ghost btn-sm" onclick="copyText('fileResultText')">Копировать</button>
+            <button class="btn btn-ghost btn-sm" onclick="downloadText('fileResultText','result.txt')">Скачать .txt</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Секция 3: WebSocket WAV -->
+  <div id="panel-ws" class="tab-panel" style="display:none;">
+    <div class="card">
+      <div class="flex items-center gap-4 mb-4">
+        <div id="wsStatusDot" style="width:12px;height:12px;border-radius:50%;background:var(--color-danger);"></div>
+        <span id="wsStatusText" class="text-sm text-muted">Отключено</span>
+        <button class="btn btn-danger btn-sm" id="btnWsStop" onclick="stopWs()" style="display:none;">Стоп</button>
+      </div>
+      <div class="form-group">
+        <label>Файл WAV (16-bit PCM)</label>
+        <input type="file" id="wsFileInput" class="input" accept=".wav" onchange="onWsFileSelected()">
+      </div>
+      <div class="flex gap-4 mb-4" style="flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="checkbox" id="ws_do_dialogue"> Диалог
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="checkbox" id="ws_do_punct"> Пунктуация
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="checkbox" id="ws_use_base64" checked> Base64 (иначе binary)</label>
+      </div>
+      <button class="btn btn-primary w-full" id="btnWs" onclick="sendWs()" disabled>Отправить</button>
+      <div id="wsResult" class="mt-4" style="display:none;">
+        <div class="card" style="background:var(--color-bg);">
+          <div id="wsPartial" class="text-muted text-sm mb-2"></div>
+          <pre id="wsResultText" style="white-space:pre-wrap;word-break:break-word;"></pre>
+          <div class="flex gap-2 mt-4">
+            <button class="btn btn-ghost btn-sm" onclick="copyText('wsResultText')">Копировать</button>
+            <button class="btn btn-ghost btn-sm" onclick="downloadText('wsResultText','result.txt')">Скачать .txt</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- История рядом -->
+  <div class="card mt-4">
+    <h3 style="margin:0 0 12px;">Последние сессии</h3>
+    <div id="asrHistory"><div class="skeleton" style="height:60px;"></div></div>
+  </div>
+</div>
+
+<script src="/static/js/asr_page.js"></script>
+{% endblock %}

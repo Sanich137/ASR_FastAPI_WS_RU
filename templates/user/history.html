@@ -1,0 +1,156 @@
+{% extends "user/base_user.html" %}
+
+{% block title %}История сессий — ASR Сервис{% endblock %}
+
+{% block user_content %}
+<div class="container">
+  <h1 style="margin:0 0 24px;">История сессий</h1>
+
+  <!-- Фильтры -->
+  <div class="card mb-4">
+    <div class="flex gap-4" style="flex-wrap:wrap;align-items:flex-end;">
+      <div class="form-group" style="flex:1;min-width:200px;">
+        <label>Тип</label>
+        <select id="filterType" class="input">
+          <option value="">Все</option>
+          <option value="url">URL</option>
+          <option value="file">Файл</option>
+          <option value="websocket">WebSocket</option>
+        </select>
+      </div>
+      <div class="form-group" style="flex:1;min-width:200px;">
+        <label>Статус</label>
+        <select id="filterStatus" class="input">
+          <option value="">Все</option>
+          <option value="completed">Завершено</option>
+          <option value="processing">В процессе</option>
+          <option value="failed">Ошибка</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" onclick="applyFilters()">Применить</button>
+      <button class="btn btn-ghost" onclick="resetFilters()">Сбросить</button>
+    </div>
+  </div>
+
+  <!-- Таблица -->
+  <div class="card">
+    <div id="historyTableContainer">
+      <div class="skeleton" style="height:200px;"></div>
+    </div>
+    <div id="loadMoreContainer" style="text-align:center;margin-top:16px;display:none;">
+      <button class="btn btn-ghost" id="btnLoadMore" onclick="loadMore()">Загрузить ещё</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let historyOffset = 0;
+  const historyLimit = 20;
+  let historyFilters = { type: '', status: '' };
+
+  async function fetchHistory(append = false) {
+    const container = document.getElementById('historyTableContainer');
+    const btn = document.getElementById('btnLoadMore');
+    if (!append) {
+      container.innerHTML = '<div class="skeleton" style="height:200px;"></div>';
+      historyOffset = 0;
+    }
+    if (btn) UI.setLoading(btn, true);
+
+    const params = new URLSearchParams({ limit: historyLimit, offset: historyOffset });
+    if (historyFilters.type) params.append('session_type', historyFilters.type);
+    if (historyFilters.status) params.append('status', historyFilters.status);
+
+    try {
+      const resp = await Auth.apiFetch('/api/v1/user/sessions?' + params.toString());
+      if (!resp.ok) throw new Error('Ошибка загрузки');
+      const data = await resp.json();
+
+      if (!append) container.innerHTML = '';
+      renderHistoryTable(data, append);
+
+      if (data.length >= historyLimit) {
+        document.getElementById('loadMoreContainer').style.display = 'block';
+      } else {
+        document.getElementById('loadMoreContainer').style.display = 'none';
+      }
+      historyOffset += data.length;
+    } catch (e) {
+      if (!append) container.innerHTML = '<div class="text-muted">Не удалось загрузить историю <button class="btn btn-ghost btn-sm" onclick="fetchHistory()">Повторить</button></div>';
+      UI.toast(e.message, 'error');
+    } finally {
+      if (btn) UI.setLoading(btn, false);
+    }
+  }
+
+  function renderHistoryTable(items, append) {
+    const container = document.getElementById('historyTableContainer');
+    if (!items || items.length === 0) {
+      if (!append) {
+        container.innerHTML = `
+          <div style="text-align:center;padding:48px 24px;">
+            <div style="font-size:48px;margin-bottom:16px;">📋</div>
+            <div class="text-muted">Нет сессий. Перейдите в <a href="/asr" style="color:var(--color-primary);">ASR</a></div>
+          </div>
+        `;
+      }
+      return;
+    }
+
+    let table = container.querySelector('table');
+    if (!table) {
+      container.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="color:var(--color-muted);font-size:12px;text-align:left;border-bottom:1px solid var(--color-border);">
+              <th style="padding:12px 8px;">Дата</th>
+              <th style="padding:12px 8px;">Тип</th>
+              <th style="padding:12px 8px;">Длительность</th>
+              <th style="padding:12px 8px;">Статус</th>
+              <th style="padding:12px 8px;"></th>
+            </tr>
+          </thead>
+          <tbody id="historyTbody"></tbody>
+        </table>
+      `;
+      table = container.querySelector('table');
+    }
+
+    const tbody = document.getElementById('historyTbody');
+    const rows = items.map(s => {
+      const statusClass = s.status === 'completed' ? 'badge-success' : s.status === 'failed' ? 'badge-danger' : 'badge-warning';
+      return `
+        <tr style="border-bottom:1px solid var(--color-border);">
+          <td style="padding:12px 8px;" class="text-sm">${UI.formatDate(s.created_at)}</td>
+          <td style="padding:12px 8px;" class="text-sm">${s.session_type}</td>
+          <td style="padding:12px 8px;" class="text-sm">${s.audio_duration_sec ? UI.formatDuration(s.audio_duration_sec) : '-'}</td>
+          <td style="padding:12px 8px;" class="text-sm"><span class="badge ${statusClass}">${s.status}</span></td>
+          <td style="padding:12px 8px;" class="text-sm">
+            <a href="/history/${s.id}" style="color:var(--color-primary);">Детали</a>
+          </td>
+        </tr>
+      `;
+    }).join('');
+    tbody.insertAdjacentHTML('beforeend', rows);
+  }
+
+  function applyFilters() {
+    historyFilters.type = document.getElementById('filterType').value;
+    historyFilters.status = document.getElementById('filterStatus').value;
+    fetchHistory(false);
+  }
+
+  function resetFilters() {
+    document.getElementById('filterType').value = '';
+    document.getElementById('filterStatus').value = '';
+    historyFilters = { type: '', status: '' };
+    fetchHistory(false);
+  }
+
+  function loadMore() {
+    fetchHistory(true);
+  }
+
+  fetchHistory(false);
+</script>
+{% endblock %}

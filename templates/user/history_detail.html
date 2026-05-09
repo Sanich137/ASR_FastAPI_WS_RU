@@ -1,0 +1,104 @@
+{% extends "user/base_user.html" %}
+
+{% block title %}Детали сессии — ASR Сервис{% endblock %}
+
+{% block user_content %}
+<div class="container">
+  <h1 style="margin:0 0 24px;">Детали сессии</h1>
+  
+  <div id="sessionDetail">
+    <div class="skeleton" style="height:300px;"></div>
+  </div>
+
+  <div class="flex gap-2 mt-4">
+    <a href="/history" class="btn btn-ghost">← Назад к истории</a>
+  </div>
+</div>
+
+<script>
+  const sessionId = '{{ session_id }}';
+
+  async function loadSessionDetail() {
+    const el = document.getElementById('sessionDetail');
+    try {
+      const resp = await Auth.apiFetch('/api/v1/user/sessions/' + sessionId);
+      if (!resp.ok) throw new Error('Сессия не найдена');
+      const s = await resp.json();
+
+      const statusClass = s.status === 'completed' ? 'badge-success' : s.status === 'failed' ? 'badge-danger' : 'badge-warning';
+      const resultJson = s.result_json ? JSON.stringify(s.result_json, null, 2) : 'Нет данных';
+
+      el.innerHTML = `
+        <div class="card mb-4">
+          <div class="flex items-center justify-between" style="margin-bottom:16px;">
+            <h3 style="margin:0;">${UI.formatDate(s.created_at)}</h3>
+            <span class="badge ${statusClass}">${s.status}</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;">
+            <div>
+              <div class="text-muted text-xs">Тип</div>
+              <div class="text-sm">${s.session_type}</div>
+            </div>
+            <div>
+              <div class="text-muted text-xs">Длительность аудио</div>
+              <div class="text-sm">${s.audio_duration_sec ? UI.formatDuration(s.audio_duration_sec) : '-'}</div>
+            </div>
+            <div>
+              <div class="text-muted text-xs">IP</div>
+              <div class="text-sm">${s.request_ip || '-'}</div>
+            </div>
+            <div>
+              <div class="text-muted text-xs">Завершено</div>
+              <div class="text-sm">${s.completed_at ? UI.formatDate(s.completed_at) : '-'}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="flex items-center justify-between" style="margin-bottom:12px;">
+            <h3 style="margin:0;">Результат</h3>
+            <div class="flex gap-2">
+              <button class="btn btn-ghost btn-sm" onclick="downloadJson()">Скачать JSON</button>
+              <button class="btn btn-ghost btn-sm" onclick="downloadTxt()">Скачать TXT</button>
+            </div>
+          </div>
+          <pre id="resultPre" style="background:var(--color-bg);padding:16px;border-radius:var(--radius);overflow:auto;max-height:500px;font-size:13px;">${escapeHtml(resultJson)}</pre>
+        </div>
+      `;
+      window._sessionData = s;
+    } catch (e) {
+      el.innerHTML = `<div class="text-muted">Не удалось загрузить детали <button class="btn btn-ghost btn-sm" onclick="loadSessionDetail()">Повторить</button></div>`;
+      UI.toast(e.message, 'error');
+    }
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function downloadJson() {
+    if (!window._sessionData || !window._sessionData.result_json) return;
+    const blob = new Blob([JSON.stringify(window._sessionData.result_json, null, 2)], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'session_' + sessionId + '.json';
+    a.click();
+  }
+
+  function downloadTxt() {
+    if (!window._sessionData || !window._sessionData.result_json) return;
+    const text = window._sessionData.result_json.sentenced_data?.raw_text_sentenced_recognition 
+      || window._sessionData.result_json.raw_data?.channel_1?.map(x => x.data?.text).join('\n') 
+      || JSON.stringify(window._sessionData.result_json, null, 2);
+    const blob = new Blob([text], {type:'text/plain'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'session_' + sessionId + '.txt';
+    a.click();
+  }
+
+  loadSessionDetail();
+</script>
+{% endblock %}

@@ -1,0 +1,32 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Тарифы{% endblock %}
+{% block content %}
+<h1>Тарифные планы</h1>
+<div class="card">
+    <p>Загрузка тарифов...</p>
+    <table id="plansTable" border="1" cellpadding="8" style="width:100%;border-collapse:collapse;">
+        <thead>
+            <tr><th>Код</th><th>Название</th><th>Запросов/мин</th><th>Цена/мес</th><th>Активен</th></tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+</div>
+<script>
+    async function loadPlans() {
+        const resp = await fetch('/api/v1/admin/tariffs');
+        const data = await resp.json();
+        const tbody = document.querySelector('#plansTable tbody');
+        tbody.innerHTML = data.map(p => `
+            <tr>
+                <td>${p.code}</td>
+                <td>${p.name}</td>
+                <td>${p.max_requests_per_minute}</td>
+                <td>${p.price_per_month || '-'}</td>
+                <td>${p.is_active ? 'Да' : 'Нет'}</td>
+            </tr>
+        `).join('');
+        document.querySelector('.card p').style.display = 'none';
+    }
+    loadPlans();
+</script>
+{% endblock %}

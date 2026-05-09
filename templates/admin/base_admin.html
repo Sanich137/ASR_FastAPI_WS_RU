@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Админ-панель{% endblock %}</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: sans-serif; margin: 0; display: flex; }
+        aside { width: 220px; background: #1f2937; color: #fff; min-height: 100vh; padding: 16px; }
+        aside a { color: #fff; text-decoration: none; display: block; padding: 8px 0; }
+        main { flex: 1; padding: 24px; background: #f3f4f6; }
+        .card { background: #fff; border-radius: 8px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body>
+    <aside>
+        <h2>ASR Admin</h2>
+        <nav>
+            <a href="/admin/dashboard">Dashboard</a>
+            <a href="/admin/users">Пользователи</a>
+            <a href="/admin/sessions">Сессии</a>
+            <a href="/admin/subscriptions">Подписки</a>
+            <a href="/admin/transactions">Транзакции</a>
+            <a href="/admin/tariffs">Тарифы</a>
+            <a href="/admin/api-keys">API-ключи</a>
+            <a href="/admin/logs">Логи</a>
+            <a href="/admin/settings">Настройки</a>
+        </nav>
+    </aside>
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

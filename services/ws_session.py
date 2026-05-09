@@ -43,6 +43,7 @@ class AudioSession(RecognitionSession):
         """
         super().__init__(session_id=client_id)
         self.state = SessionState.connecting
+        self.user_id: Optional[str] = None
         self.wait_null_answers: bool = True
         self.last_activity: float = time.time()
         self.max_buffer_duration_sec: float = (

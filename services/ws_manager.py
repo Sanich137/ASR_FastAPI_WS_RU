@@ -38,6 +38,7 @@ class ConnectionMeta:
     client_ip: Optional[str] = None
     user_agent: Optional[str] = None
     subscribe_status: bool = False
+    user_id: Optional[str] = None
 
 
 class ConnectionManager:

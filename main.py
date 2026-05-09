@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import time
 import uvicorn
@@ -23,6 +24,12 @@ from VoiceActivityDetector import vad
 from routes.ws_audio_transkrib import router as ws_audio_transkrib_router
 from api.legacy import router as legacy_router
 from api.v1.api import router as api_v1_router
+from api.v1.endpoints.tg import router as tg_router
+from routes.admin import router as admin_html_router
+from routes.user import router as user_html_router
+from core.middleware import RateLimitMiddleware
+from api.v1.endpoints.admin_ws import router as admin_ws_router
+from services.metrics_reporter import metrics_reporter_loop
 import models
 from config import WS_DESCRIPTION
 
@@ -105,6 +112,11 @@ async def lifespan(app):
         interval_sec=settings.WS_STATUS_BROADCAST_INTERVAL_SEC,
     )
 
+    # Запуск фоновой задачи записи метрик в БД (Этап 5)
+    app.state.metrics_task = asyncio.create_task(
+        metrics_reporter_loop(app.state, interval_sec=30.0)
+    )
+
     # Настройка сборщика мусора.
     gc.set_threshold(500, 5, 5)
 
@@ -143,6 +155,14 @@ async def lifespan(app):
         logger.info("File watcher started")
 
     yield  # Здесь приложение работает
+
+    # Остановка фоновой задачи метрик
+    if hasattr(app.state, "metrics_task"):
+        app.state.metrics_task.cancel()
+        try:
+            await app.state.metrics_task
+        except asyncio.CancelledError:
+            pass
 
     # Graceful shutdown WebSocket (Задача 6.4, 6.9)
     if hasattr(app.state, "ws_manager"):
@@ -205,6 +225,13 @@ app.add_middleware(
     minimum_size=500
 )
 
+# Rate limiting middleware (Этап 5)
+app.add_middleware(
+    RateLimitMiddleware,
+    max_requests=60,
+    window_seconds=60.0,
+)
+
 # Exception handlers
 register_exception_handlers(app)
 
@@ -215,6 +242,10 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 app.include_router(ws_audio_transkrib_router, tags=["legacy"])
 app.include_router(legacy_router, tags=["legacy"])
 app.include_router(api_v1_router, tags=["api/v1"])
+app.include_router(tg_router)
+app.include_router(admin_html_router)
+app.include_router(admin_ws_router)
+app.include_router(user_html_router)
 
 try:
     if __name__ == '__main__':

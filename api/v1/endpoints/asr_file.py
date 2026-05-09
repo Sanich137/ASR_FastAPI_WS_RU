@@ -2,6 +2,12 @@ import asyncio
 import logging
 from config import settings
 from fastapi import APIRouter, Depends, File, Form, UploadFile
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from core.deps import get_current_user_or_none
+from db.session import get_db_session
+from db.models import ASRSession
+from db.enums import ASRSessionStatus, ASRSessionType
 from models.fast_api_models import PostFileRequest, V1BaseResponse, ASRData, RawData, SentencedData, DiarizedData
 from services.recognition_session import FileRecognitionSession
 from Recognizer.engine.file_recognition import process_file
@@ -50,9 +56,24 @@ async def async_receive_file(
     params: PostFileRequest = Depends(get_file_request),
     recognizer: Recognizer = Depends(get_recognizer),
     punctuator: SbertPuncCaseOnnx = Depends(get_punctuator),
-    diarizer: Diarizer = Depends(get_diarizer)
+    diarizer: Diarizer = Depends(get_diarizer),
+    current_user = Depends(get_current_user_or_none),
+    db: AsyncSession = Depends(get_db_session),
 ) -> V1BaseResponse:
+    from datetime import datetime, timezone
+
     session = FileRecognitionSession(params=params)
+    asr_db_session = None
+    if current_user:
+        asr_db_session = ASRSession(
+            user_id=current_user.id,
+            session_type=ASRSessionType.file,
+            status=ASRSessionStatus.processing,
+        )
+        db.add(asr_db_session)
+        await db.commit()
+        await db.refresh(asr_db_session)
+
     try:
         await session.save_upload(file)
         logger.info(f"Получен и сохранён файл {file.filename}")
@@ -63,6 +84,15 @@ async def async_receive_file(
             punctuator=punctuator,
             diarizer=diarizer
         )
+        if asr_db_session:
+            try:
+                asr_db_session.status = ASRSessionStatus.completed if result_dict.get('success') else ASRSessionStatus.failed
+                asr_db_session.completed_at = datetime.now(timezone.utc)
+                asr_db_session.result_json = result_dict
+                await db.commit()
+            except Exception as exc:
+                logger.debug("Failed to save ASRSession result: %s", exc)
+
         return V1BaseResponse(
             success=result_dict.get('success', True),
             error_description=result_dict.get('error_description'),

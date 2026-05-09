@@ -1,0 +1,33 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Транзакции{% endblock %}
+{% block content %}
+<h1>Транзакции</h1>
+<div class="card">
+    <p>Загрузка транзакций...</p>
+    <table id="txTable" border="1" cellpadding="8" style="width:100%;border-collapse:collapse;">
+        <thead>
+            <tr><th>ID</th><th>Пользователь</th><th>Сумма</th><th>Валюта</th><th>Статус</th><th>Провайдер</th></tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+</div>
+<script>
+    async function loadTx() {
+        const resp = await fetch('/api/v1/admin/transactions');
+        const data = await resp.json();
+        const tbody = document.querySelector('#txTable tbody');
+        tbody.innerHTML = data.map(t => `
+            <tr>
+                <td>${t.id}</td>
+                <td>${t.user_id}</td>
+                <td>${t.amount || '-'}</td>
+                <td>${t.currency}</td>
+                <td>${t.status}</td>
+                <td>${t.payment_provider}</td>
+            </tr>
+        `).join('');
+        document.querySelector('.card p').style.display = 'none';
+    }
+    loadTx();
+</script>
+{% endblock %}

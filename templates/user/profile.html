@@ -1,0 +1,131 @@
+{% extends "user/base_user.html" %}
+
+{% block title %}Профиль — ASR Сервис{% endblock %}
+
+{% block user_content %}
+<div class="container">
+  <h1 style="margin:0 0 24px;">Профиль</h1>
+
+  <div class="card mb-4">
+    <h3 style="margin:0 0 16px;">Личные данные</h3>
+    <form id="profileForm" onsubmit="return false;">
+      <div class="form-group">
+        <label>Имя</label>
+        <input type="text" id="fullName" class="input" placeholder="Иван Иванов">
+      </div>
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="email" class="input" disabled style="opacity:.6;">
+      </div>
+      <div class="form-group">
+        <label>Телефон</label>
+        <input type="tel" id="phone" class="input" placeholder="+7 900 000-00-00">
+      </div>
+      <button class="btn btn-primary" id="btnSaveProfile" onclick="saveProfile()">Сохранить</button>
+    </form>
+  </div>
+
+  <div class="card mb-4">
+    <h3 style="margin:0 0 16px;">Смена пароля</h3>
+    <form id="pwdForm" onsubmit="return false;">
+      <div class="form-group">
+        <label>Текущий пароль</label>
+        <input type="password" id="oldPwd" class="input" placeholder="••••••">
+      </div>
+      <div class="form-group">
+        <label>Новый пароль</label>
+        <input type="password" id="newPwd" class="input" placeholder="••••••" minlength="6">
+      </div>
+      <div class="form-group">
+        <label>Подтвердите новый пароль</label>
+        <input type="password" id="confirmPwd" class="input" placeholder="••••••">
+      </div>
+      <button class="btn btn-primary" id="btnChangePwd" onclick="changePassword()">Изменить пароль</button>
+    </form>
+  </div>
+
+  <div class="card" style="border-left:4px solid var(--color-danger);">
+    <h3 style="margin:0 0 16px;color:var(--color-danger);">Опасная зона</h3>
+    <p class="text-muted text-sm">Удаление аккаунта необратимо. Все данные будут сохранены, но доступ будет закрыт.</p>
+    <button class="btn btn-danger" onclick="deleteAccount()">Удалить аккаунт</button>
+  </div>
+</div>
+
+<script>
+  async function loadProfile() {
+    try {
+      const resp = await Auth.apiFetch('/api/v1/auth/me');
+      if (!resp.ok) throw new Error('Ошибка загрузки профиля');
+      const u = await resp.json();
+      document.getElementById('fullName').value = u.full_name || '';
+      document.getElementById('email').value = u.email || '';
+      // phone не возвращается в /auth/me, загружаем отдельно если нужно
+    } catch (e) {
+      UI.toast(e.message, 'error');
+    }
+  }
+
+  async function saveProfile() {
+    const btn = document.getElementById('btnSaveProfile');
+    UI.setLoading(btn, true);
+    try {
+      const resp = await Auth.apiFetch('/api/v1/user/profile', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          full_name: document.getElementById('fullName').value.trim(),
+          phone: document.getElementById('phone').value.trim() || null
+        })
+      });
+      if (!resp.ok) throw new Error('Ошибка сохранения');
+      UI.toast('Профиль обновлён', 'success');
+    } catch (e) {
+      UI.toast(e.message, 'error');
+    } finally {
+      UI.setLoading(btn, false);
+    }
+  }
+
+  async function changePassword() {
+    const oldPwd = document.getElementById('oldPwd').value;
+    const newPwd = document.getElementById('newPwd').value;
+    const confirmPwd = document.getElementById('confirmPwd').value;
+
+    if (!oldPwd || !newPwd) { UI.toast('Заполните все поля', 'warning'); return; }
+    if (newPwd.length < 6) { UI.toast('Пароль минимум 6 символов', 'warning'); return; }
+    if (newPwd !== confirmPwd) { UI.toast('Пароли не совпадают', 'warning'); return; }
+
+    const btn = document.getElementById('btnChangePwd');
+    UI.setLoading(btn, true);
+    try {
+      const resp = await Auth.apiFetch('/api/v1/auth/change-password', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ old_password: oldPwd, new_password: newPwd })
+      });
+      if (!resp.ok) throw new Error('Ошибка смены пароля');
+      UI.toast('Пароль изменён', 'success');
+      document.getElementById('pwdForm').reset();
+    } catch (e) {
+      UI.toast(e.message, 'error');
+    } finally {
+      UI.setLoading(btn, false);
+    }
+  }
+
+  function deleteAccount() {
+    UI.confirmDialog('Удалить аккаунт?', 'Все данные будут сохранены, но доступ закрыт. Продолжить?', async () => {
+      try {
+        const resp = await Auth.apiFetch('/api/v1/user/profile', {method: 'DELETE'});
+        if (!resp.ok) throw new Error('Ошибка');
+        Auth.clearAuth();
+        window.location.href = '/login';
+      } catch (e) {
+        UI.toast(e.message, 'error');
+      }
+    });
+  }
+
+  loadProfile();
+</script>
+{% endblock %}

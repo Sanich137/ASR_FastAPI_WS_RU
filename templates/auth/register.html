@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}Регистрация — ASR Сервис{% endblock %}
+
+{% block content %}
+<div class="container flex items-center justify-center" style="min-height:calc(100vh - 57px);">
+  <div class="card" style="width:100%;max-width:360px;">
+    <h2 style="margin:0 0 16px;text-align:center;">Регистрация</h2>
+    <form id="regForm" onsubmit="return false;">
+      <div class="form-group">
+        <label for="full_name">Имя</label>
+        <input type="text" id="full_name" class="input" placeholder="Иван Иванов">
+      </div>
+      <div class="form-group">
+        <label for="email">Email</label>
+        <input type="email" id="email" class="input" placeholder="you@example.com" required>
+      </div>
+      <div class="form-group">
+        <label for="password">Пароль</label>
+        <input type="password" id="password" class="input" placeholder="••••••" required minlength="6">
+      </div>
+      <button type="submit" class="btn btn-primary w-full" id="btnRegister" onclick="handleRegister()">Зарегистрироваться</button>
+    </form>
+    <p class="text-sm text-muted" style="text-align:center;margin-top:16px;">
+      Уже есть аккаунт? <a href="/login" style="color:var(--color-primary);">Войти</a>
+    </p>
+  </div>
+</div>
+
+<script>
+  async function handleRegister() {
+    const btn = document.getElementById('btnRegister');
+    UI.setLoading(btn, true);
+
+    const full_name = document.getElementById('full_name').value.trim() || null;
+    const email = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+
+    try {
+      const resp = await fetch('/api/v1/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email, password, full_name })
+      });
+
+      const data = await resp.json();
+      if (!resp.ok) {
+        UI.toast(data.detail || 'Ошибка регистрации', 'error');
+        return;
+      }
+
+      if (data.access_token) {
+        Auth.setAccessToken(data.access_token);
+        UI.toast('Регистрация успешна', 'success');
+        window.location.href = '/dashboard';
+      } else {
+        UI.toast('Регистрация завершена. Войдите вручную.', 'success');
+        window.location.href = '/login';
+      }
+    } catch (e) {
+      UI.toast('Сетевая ошибка: ' + e.message, 'error');
+    } finally {
+      UI.setLoading(btn, false);
+    }
+  }
+
+  document.getElementById('regForm').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') handleRegister();
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,91 @@
+{% extends "user/base_user.html" %}
+
+{% block title %}Подписка — ASR Сервис{% endblock %}
+
+{% block user_content %}
+<div class="container">
+  <h1 style="margin:0 0 24px;">Управление подпиской</h1>
+
+  <!-- Текущая подписка -->
+  <div class="card mb-4" id="currentSub">
+    <div class="skeleton" style="height:100px;"></div>
+  </div>
+
+  <!-- Доступные тарифы -->
+  <h3 style="margin:0 0 16px;">Доступные тарифы</h3>
+  <div class="card mb-4">
+    <div class="text-muted" style="padding:24px;text-align:center;">
+      Выбор и оплата тарифов — в разработке.<br>
+      <a href="/asr" style="color:var(--color-primary);">Перейти к распознаванию</a>
+    </div>
+  </div>
+
+  <!-- История платежей -->
+  <h3 style="margin:0 0 16px;">История платежей</h3>
+  <div class="card">
+    <div class="text-muted" style="padding:24px;text-align:center;">Нет данных</div>
+  </div>
+</div>
+
+<script>
+  async function loadSubscription() {
+    const el = document.getElementById('currentSub');
+    try {
+      const resp = await Auth.apiFetch('/api/v1/user/subscription');
+      if (!resp.ok) {
+        // Нет активной подписки — показываем бесплатный тариф
+        el.innerHTML = `
+          <div class="flex items-center justify-between" style="margin-bottom:12px;">
+            <h3 style="margin:0;">Текущий тариф</h3>
+            <span class="badge badge-success">Бесплатный</span>
+          </div>
+          <div class="text-muted text-sm">Ограничение: 10 запросов/сутки. <a href="/asr" style="color:var(--color-primary);">Начать использовать</a></div>
+        `;
+        return;
+      }
+      const s = await resp.json();
+      el.innerHTML = `
+        <div class="flex items-center justify-between" style="margin-bottom:12px;">
+          <h3 style="margin:0;">${s.plan_name || 'Тариф'}</h3>
+          <span class="badge badge-${s.status==='active'?'success':'warning'}">${s.status}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">
+          <div>
+            <div class="text-muted text-xs">Начало</div>
+            <div class="text-sm">${UI.formatDate(s.started_at)}</div>
+          </div>
+          <div>
+            <div class="text-muted text-xs">Окончание</div>
+            <div class="text-sm">${s.expires_at ? UI.formatDate(s.expires_at) : '—'}</div>
+          </div>
+          <div>
+            <div class="text-muted text-xs">Авто-продление</div>
+            <div class="text-sm">${s.auto_renew ? 'Включено' : 'Отключено'}</div>
+          </div>
+        </div>
+        <div class="flex gap-2 mt-4">
+          <button class="btn btn-ghost btn-sm" onclick="cancelRenew()">Отключить авто-продление</button>
+        </div>
+      `;
+    } catch (e) {
+      el.innerHTML = `<div class="text-muted">Не удалось загрузить подписку <button class="btn btn-ghost btn-sm" onclick="loadSubscription()">Повторить</button></div>`;
+      UI.toast(e.message, 'error');
+    }
+  }
+
+  async function cancelRenew() {
+    UI.confirmDialog('Отключить авто-продление?', 'Вы уверены?', async () => {
+      try {
+        const resp = await Auth.apiFetch('/api/v1/user/subscription/cancel', {method:'POST'});
+        if (!resp.ok) throw new Error('Ошибка');
+        UI.toast('Авто-продление отключено', 'success');
+        loadSubscription();
+      } catch (e) {
+        UI.toast(e.message, 'error');
+      }
+    });
+  }
+
+  loadSubscription();
+</script>
+{% endblock %}

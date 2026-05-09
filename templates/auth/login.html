@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}Вход — ASR Сервис{% endblock %}
+
+{% block content %}
+<div class="container flex items-center justify-center" style="min-height:calc(100vh - 57px);">
+  <div class="card" style="width:100%;max-width:360px;">
+    <h2 style="margin:0 0 16px;text-align:center;">Вход</h2>
+    <form id="loginForm" onsubmit="return false;">
+      <div class="form-group">
+        <label for="email">Email</label>
+        <input type="email" id="email" class="input" placeholder="you@example.com" required>
+      </div>
+      <div class="form-group">
+        <label for="password">Пароль</label>
+        <input type="password" id="password" class="input" placeholder="••••••" required>
+      </div>
+      <button type="submit" class="btn btn-primary w-full" id="btnLogin" onclick="handleLogin()">Войти</button>
+    </form>
+    <p class="text-sm text-muted" style="text-align:center;margin-top:16px;">
+      Нет аккаунта? <a href="/register" style="color:var(--color-primary);">Зарегистрироваться</a>
+    </p>
+  </div>
+</div>
+
+<script>
+  async function handleLogin() {
+    const btn = document.getElementById('btnLogin');
+    UI.setLoading(btn, true);
+
+    const email = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+
+    try {
+      const resp = await fetch('/api/v1/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email, password })
+      });
+
+      const data = await resp.json();
+      if (!resp.ok) {
+        UI.toast(data.detail || 'Ошибка входа', 'error');
+        return;
+      }
+
+      if (data.access_token) {
+        Auth.setAccessToken(data.access_token);
+        UI.toast('Вход выполнен успешно', 'success');
+        window.location.href = '/dashboard';
+      } else {
+        UI.toast('Токен не получен', 'error');
+      }
+    } catch (e) {
+      UI.toast('Сетевая ошибка: ' + e.message, 'error');
+    } finally {
+      UI.setLoading(btn, false);
+    }
+  }
+
+  document.getElementById('loginForm').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') handleLogin();
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,155 @@
+{% extends "user/base_user.html" %}
+
+{% block title %}API-ключи — ASR Сервис{% endblock %}
+
+{% block user_content %}
+<div class="container">
+  <h1 style="margin:0 0 24px;">API-ключи</h1>
+
+  <div class="card mb-4">
+    <div class="flex items-center justify-between">
+      <div>
+        <h3 style="margin:0;">Управление ключами</h3>
+        <p class="text-muted text-sm">Ключи для программного доступа к API</p>
+      </div>
+      <button class="btn btn-primary" id="btnCreateKey" onclick="showCreateModal()">Создать ключ</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div id="keysContainer">
+      <div class="skeleton" style="height:120px;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Модалка создания ключа -->
+<dialog id="createKeyDialog" style="background:var(--color-surface);color:var(--color-text);border:1px solid var(--color-border);border-radius:var(--radius);padding:0;max-width:400px;">
+  <div style="padding:24px;">
+    <h3 style="margin:0 0 16px;">Новый API-ключ</h3>
+    <div class="form-group">
+      <label>Название</label>
+      <input type="text" id="keyName" class="input" placeholder="Например, Production">
+    </div>
+    <div class="flex gap-2" style="justify-content:flex-end;margin-top:16px;">
+      <button class="btn btn-ghost" onclick="document.getElementById('createKeyDialog').close()">Отмена</button>
+      <button class="btn btn-primary" id="btnConfirmCreate" onclick="createKey()">Создать</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- Модалка показа ключа (один раз) -->
+<dialog id="showKeyDialog" style="background:var(--color-surface);color:var(--color-text);border:1px solid var(--color-border);border-radius:var(--radius);padding:0;max-width:480px;">
+  <div style="padding:24px;">
+    <h3 style="margin:0 0 8px;color:var(--color-warning);">⚠️ Скопируйте ключ сейчас</h3>
+    <p class="text-muted text-sm" style="margin-bottom:16px;">Он больше не будет показан.</p>
+    <div class="form-group">
+      <input type="text" id="plainKeyInput" class="input" readonly style="font-family:monospace;" onclick="this.select()">
+    </div>
+    <div class="flex gap-2" style="justify-content:flex-end;margin-top:16px;">
+      <button class="btn btn-ghost" onclick="copyKey()">Копировать</button>
+      <button class="btn btn-primary" onclick="document.getElementById('showKeyDialog').close(); loadKeys();">Готово</button>
+    </div>
+  </div>
+</dialog>
+
+<script>
+  async function loadKeys() {
+    const el = document.getElementById('keysContainer');
+    try {
+      const resp = await Auth.apiFetch('/api/v1/user/api-keys');
+      if (!resp.ok) throw new Error('Ошибка загрузки');
+      const data = await resp.json();
+
+      if (!data || data.length === 0) {
+        el.innerHTML = `
+          <div style="text-align:center;padding:32px;">
+            <div style="font-size:32px;margin-bottom:8px;">🔑</div>
+            <div class="text-muted">Нет ключей. Создайте первый ключ для программного доступа.</div>
+          </div>
+        `;
+        return;
+      }
+
+      el.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="color:var(--color-muted);font-size:12px;text-align:left;border-bottom:1px solid var(--color-border);">
+              <th style="padding:12px 8px;">Название</th>
+              <th style="padding:12px 8px;">Статус</th>
+              <th style="padding:12px 8px;">Создан</th>
+              <th style="padding:12px 8px;">Последнее использование</th>
+              <th style="padding:12px 8px;"></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.map(k => `
+              <tr style="border-bottom:1px solid var(--color-border);">
+                <td style="padding:12px 8px;" class="text-sm">${k.name}</td>
+                <td style="padding:12px 8px;" class="text-sm"><span class="badge badge-${k.is_active?'success':'danger'}">${k.is_active?'Активен':'Отозван'}</span></td>
+                <td style="padding:12px 8px;" class="text-sm">${UI.formatDate(k.created_at)}</td>
+                <td style="padding:12px 8px;" class="text-sm">${k.last_used_at ? UI.formatDate(k.last_used_at) : '—'}</td>
+                <td style="padding:12px 8px;" class="text-sm">
+                  ${k.is_active ? `<button class="btn btn-danger btn-sm" onclick="revokeKey('${k.id}')">Отозвать</button>` : ''}
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    } catch (e) {
+      el.innerHTML = `<div class="text-muted">Не удалось загрузить ключи <button class="btn btn-ghost btn-sm" onclick="loadKeys()">Повторить</button></div>`;
+      UI.toast(e.message, 'error');
+    }
+  }
+
+  function showCreateModal() {
+    document.getElementById('keyName').value = '';
+    document.getElementById('createKeyDialog').showModal();
+  }
+
+  async function createKey() {
+    const name = document.getElementById('keyName').value.trim();
+    if (!name) { UI.toast('Введите название', 'warning'); return; }
+    const btn = document.getElementById('btnConfirmCreate');
+    UI.setLoading(btn, true);
+    try {
+      const resp = await Auth.apiFetch('/api/v1/user/api-keys', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ name })
+      });
+      if (!resp.ok) throw new Error('Ошибка создания');
+      const data = await resp.json();
+      document.getElementById('createKeyDialog').close();
+      document.getElementById('plainKeyInput').value = data.plain_key;
+      document.getElementById('showKeyDialog').showModal();
+    } catch (e) {
+      UI.toast(e.message, 'error');
+    } finally {
+      UI.setLoading(btn, false);
+    }
+  }
+
+  function copyKey() {
+    const input = document.getElementById('plainKeyInput');
+    input.select();
+    navigator.clipboard.writeText(input.value).then(() => UI.toast('Ключ скопирован', 'success'));
+  }
+
+  function revokeKey(keyId) {
+    UI.confirmDialog('Отозвать ключ?', 'Программный доступ будет немедленно заблокирован.', async () => {
+      try {
+        const resp = await Auth.apiFetch('/api/v1/user/api-keys/' + keyId, {method: 'DELETE'});
+        if (!resp.ok) throw new Error('Ошибка');
+        UI.toast('Ключ отозван', 'success');
+        loadKeys();
+      } catch (e) {
+        UI.toast(e.message, 'error');
+      }
+    });
+  }
+
+  loadKeys();
+</script>
+{% endblock %}
