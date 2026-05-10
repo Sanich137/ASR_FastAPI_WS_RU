@@ -60,7 +60,7 @@ async def get_current_user(
 
 def require_admin(user: User = Depends(get_current_user)) -> User:
     """Проверяет, что пользователь — админ или суперадмин."""
-    if user.role not in (UserRole.admin, UserRole.superadmin):
+    if str(user.role) not in (UserRole.admin.value, UserRole.superadmin.value):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Требуются права администратора",
@@ -70,7 +70,7 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
 
 def require_superadmin(user: User = Depends(get_current_user)) -> User:
     """Проверяет, что пользователь — суперадмин."""
-    if user.role != UserRole.superadmin:
+    if str(user.role) != UserRole.superadmin.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Требуются права суперадминистратора",

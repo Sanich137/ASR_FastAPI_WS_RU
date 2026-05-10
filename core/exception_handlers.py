@@ -3,7 +3,7 @@ import traceback
 
 from fastapi import Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from models.fast_api_models import ErrorResponse
@@ -23,8 +23,17 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    accept = request.headers.get("accept", "")
+    is_html = "text/html" in accept
+
+    if is_html and exc.status_code in (401, 403):
+        login_url = "/admin/login" if request.url.path.startswith("/admin") else "/login"
+        if request.url.path not in (login_url, "/login", "/admin/login"):
+            return RedirectResponse(url=login_url, status_code=303)
+
     return JSONResponse(
         status_code=exc.status_code,
+        headers=exc.headers,
         content=ErrorResponse(
             success=False,
             error_description=exc.detail,

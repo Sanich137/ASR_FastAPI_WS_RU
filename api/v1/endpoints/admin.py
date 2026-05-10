@@ -1,5 +1,7 @@
 """FastAPI-роутер админ-панели."""
 
+from collections import defaultdict
+from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -7,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.deps import get_current_user, require_admin, require_superadmin
-from db.models import ApiKey, Plan, Subscription, Transaction, User
+from db.models import ApiKey, Plan, Subscription, SystemLog, Transaction, User
 from db.session import get_db_session
 from models.admin import (
     AdminApiKeyResponse,
@@ -39,9 +41,75 @@ async def admin_metrics(current_user: User = Depends(require_admin)):
 
 
 @router.get("/metrics/history")
-async def admin_metrics_history(current_user: User = Depends(require_admin)):
-    """История метрик за период (заглушка)."""
-    return {"detail": "История метрик — заглушка"}
+async def admin_metrics_history(
+    range: str = "24h",
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """История метрик за период с группировкой по 5-минутным слотам."""
+    # Парсим параметр range (поддерживаем 1h, 24h, 7d и т.д.)
+    try:
+        if range.endswith("h"):
+            hours = int(range[:-1])
+            since = datetime.utcnow() - timedelta(hours=hours)
+        elif range.endswith("d"):
+            days = int(range[:-1])
+            since = datetime.utcnow() - timedelta(days=days)
+        else:
+            since = datetime.utcnow() - timedelta(hours=24)
+    except ValueError:
+        since = datetime.utcnow() - timedelta(hours=24)
+
+    result = await db.execute(
+        select(SystemLog)
+        .where(
+            SystemLog.component == "SystemMetricsCollector",
+            SystemLog.created_at >= since,
+        )
+        .order_by(SystemLog.created_at)
+    )
+    logs = result.scalars().all()
+
+    # Группировка по 5-минутным слотам
+    slots = defaultdict(
+        lambda: {
+            "cpu_values": [],
+            "gpu_values": [],
+            "conn_values": [],
+            "queue_values": [],
+        }
+    )
+
+    for log in logs:
+        ts = log.created_at
+        slot_ts = ts.replace(
+            minute=(ts.minute // 5) * 5, second=0, microsecond=0
+        )
+        key = slot_ts.isoformat()
+        meta = log.meta or {}
+        slots[key]["cpu_values"].append(meta.get("cpu_percent"))
+        slots[key]["gpu_values"].append(meta.get("gpu_utilization_percent"))
+        slots[key]["conn_values"].append(meta.get("active_connections"))
+        slots[key]["queue_values"].append(meta.get("queue_depth"))
+
+    def _avg(values):
+        clean = [v for v in values if v is not None]
+        return round(sum(clean) / len(clean), 2) if clean else None
+
+    response = []
+    for key in sorted(slots.keys()):
+        data = slots[key]
+        response.append(
+            {
+                "timestamp": key,
+                "cpu": _avg(data["cpu_values"]),
+                "gpu": _avg(data["gpu_values"]),
+                "active_connections": _avg(data["conn_values"]),
+                "queue_depth": _avg(data["queue_values"]),
+            }
+        )
+
+    return response
 
 
 @router.get("/users", response_model=list[AdminUserListItem])
@@ -67,7 +135,7 @@ async def admin_users_list(
             id=u.id,
             email=u.email,
             full_name=u.full_name,
-            role=u.role.value,
+            role=u.role,
             is_active=u.is_active,
             created_at=u.created_at,
             last_login_at=u.last_login_at,
@@ -93,7 +161,7 @@ async def admin_user_detail(
         id=user.id,
         email=user.email,
         full_name=user.full_name,
-        role=user.role.value,
+        role=user.role,
         is_active=user.is_active,
         created_at=user.created_at,
         last_login_at=user.last_login_at,
@@ -124,7 +192,7 @@ async def admin_user_update(
         id=user.id,
         email=user.email,
         full_name=user.full_name,
-        role=user.role.value,
+        role=user.role,
         is_active=user.is_active,
         created_at=user.created_at,
         last_login_at=user.last_login_at,
@@ -306,7 +374,7 @@ async def admin_subscriptions_list(
             user_id=s.user_id,
             plan_id=s.plan_id,
             plan_name=None,
-            status=s.status.value,
+            status=s.status,
             started_at=s.started_at,
             expires_at=s.expires_at,
             auto_renew=s.auto_renew,
@@ -367,7 +435,7 @@ async def admin_transactions_list(
             subscription_id=t.subscription_id,
             amount=float(t.amount) if t.amount is not None else None,
             currency=t.currency,
-            status=t.status.value,
+            status=t.status,
             payment_provider=t.payment_provider,
             external_payment_id=t.external_payment_id,
             created_at=t.created_at,
@@ -395,7 +463,7 @@ async def admin_logs_list(
     return [
         AdminSystemLogResponse(
             id=l.id,
-            level=l.level.value,
+            level=l.level,
             component=l.component,
             message=l.message,
             meta=l.meta,

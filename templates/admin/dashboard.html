@@ -1,18 +1,105 @@
 {% extends "admin/base_admin.html" %}
-{% block title %}Dashboard{% endblock %}
+
+{% block title %}Dashboard — Админ-панель{% endblock %}
+
 {% block content %}
-<h1>Dashboard</h1>
-<div class="card">
-    <p>Загрузка метрик...</p>
-    <canvas id="metricsChart"></canvas>
+<div class="container">
+  <h1 style="margin:0 0 24px;">Dashboard</h1>
+
+  <!-- Алерт высокой нагрузки -->
+  <div id="alertBanner" class="card" style="display:none; border-left:4px solid var(--color-danger); margin-bottom:16px;">
+    <div class="flex items-center gap-4">
+      <span style="font-size:20px;">⚠️</span>
+      <div>
+        <div style="font-weight:600; color:var(--color-danger);">Высокая нагрузка</div>
+        <div class="text-sm text-muted" id="alertText">CPU или очередь превысили порог.</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('alertBanner').style.display='none'" style="margin-left:auto;">Скрыть</button>
+    </div>
+  </div>
+
+  <!-- Виджеты -->
+  <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+    <div class="card" id="widget-cpu">
+      <div class="text-muted text-sm">CPU</div>
+      <div class="skeleton" style="height:32px; margin-top:8px;"></div>
+    </div>
+    <div class="card" id="widget-gpu">
+      <div class="text-muted text-sm">GPU</div>
+      <div class="skeleton" style="height:32px; margin-top:8px;"></div>
+    </div>
+    <div class="card" id="widget-tasks">
+      <div class="text-muted text-sm">Активные задачи</div>
+      <div class="skeleton" style="height:32px; margin-top:8px;"></div>
+    </div>
+    <div class="card" id="widget-queue">
+      <div class="text-muted text-sm">Очередь</div>
+      <div class="skeleton" style="height:32px; margin-top:8px;"></div>
+    </div>
+    <div class="card" id="widget-uptime">
+      <div class="text-muted text-sm">Uptime</div>
+      <div class="skeleton" style="height:32px; margin-top:8px;"></div>
+    </div>
+    <div class="card" id="widget-adapter-status">
+      <div class="text-muted text-sm">Adapter Status</div>
+      <div class="skeleton" style="height:32px; margin-top:8px;"></div>
+    </div>
+  </div>
+
+  <!-- График -->
+  <div class="card">
+    <div class="flex items-center justify-between" style="margin-bottom:16px;">
+      <h3 style="margin:0;">Нагрузка за 24 часа</h3>
+      <span class="text-muted text-sm" id="chartStatus">Загрузка...</span>
+    </div>
+    <canvas id="metricsChart" height="100"></canvas>
+  </div>
 </div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/admin_dashboard.js"></script>
 <script>
-    async function loadMetrics() {
-        const resp = await fetch('/api/v1/admin/metrics');
-        const data = await resp.json();
-        // TODO: отрисовка графиков Chart.js
-        document.querySelector('.card p').textContent = JSON.stringify(data, null, 2);
+  const wsClient = new AdminDashboardWS();
+  wsClient.connect(Auth.getAccessToken());
+
+  // Загрузка истории метрик для Chart.js
+  async function loadHistoryChart() {
+    const ctx = document.getElementById('metricsChart').getContext('2d');
+    try {
+      const resp = await Auth.apiFetch('/api/v1/admin/metrics/history?range=24h');
+      const data = resp.ok ? await resp.json() : [];
+      document.getElementById('chartStatus').textContent = data.length ? 'Обновлено' : 'Нет данных';
+
+      const labels = data.map(d => d.timestamp ? new Date(d.timestamp).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'}) : '');
+      const cpuData = data.map(d => d.cpu || 0);
+      const gpuData = data.map(d => d.gpu_utilization_percent || 0);
+
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            { label: 'CPU %', data: cpuData, borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', tension: 0.3, fill: true },
+            { label: 'GPU %', data: gpuData, borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.1)', tension: 0.3, fill: true },
+          ]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { labels: { color: 'var(--color-text)' } } },
+          scales: {
+            x: { ticks: { color: 'var(--color-muted)' }, grid: { color: 'var(--color-border)' } },
+            y: { ticks: { color: 'var(--color-muted)' }, grid: { color: 'var(--color-border)' }, min: 0, max: 100 }
+          }
+        }
+      });
+    } catch (e) {
+      document.getElementById('chartStatus').textContent = 'Ошибка загрузки';
+      UI.toast('Не удалось загрузить историю метрик', 'error');
     }
-    loadMetrics();
+  }
+
+  loadHistoryChart();
 </script>
 {% endblock %}

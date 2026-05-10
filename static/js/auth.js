@@ -1,9 +1,24 @@
 (function() {
-  let _token = null;
+  'use strict';
 
-  function setAccessToken(t) { _token = t; }
+  // Восстанавливаем токен из cookie для SSR-переходов
+  let _token = null;
+  const m = document.cookie.match(/(?:^|; )access_token=([^;]*)/);
+  if (m) {
+    try { _token = decodeURIComponent(m[1]); } catch(e) { _token = null; }
+  }
+
+  function _setCookie(name, value, days) {
+    const expires = value
+      ? '; expires=' + new Date(Date.now() + days * 864e5).toUTCString()
+      : '; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+    const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+    document.cookie = name + '=' + encodeURIComponent(value || '') + expires + '; path=/; SameSite=Lax' + secure;
+  }
+
+  function setAccessToken(t) { _token = t; _setCookie('access_token', t, 1); }
   function getAccessToken() { return _token; }
-  function clearAuth() { _token = null; }
+  function clearAuth() { _token = null; _setCookie('access_token', '', -1); }
 
   let _isRefreshing = false;
   let _refreshPromise = null;
@@ -85,5 +100,5 @@
     }
   }
 
-  window.Auth = { setAccessToken, getAccessToken, clearAuth, apiFetch, initAuth };
+  window.Auth = { setAccessToken, getAccessToken, clearAuth, apiFetch, initAuth, refreshToken };
 })();

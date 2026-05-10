@@ -6,6 +6,7 @@ import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import select
 
+from core.exceptions import InvalidTokenException, TokenExpiredException
 from core.security import decode_token  # type: ignore[import-untyped]
 from db.enums import UserRole
 from db.models import User
@@ -31,7 +32,11 @@ async def admin_websocket(websocket: WebSocket):
         return
 
     token = auth_msg.get("access_token", "")
-    payload = decode_token(token)
+    try:
+        payload = decode_token(token)
+    except (TokenExpiredException, InvalidTokenException):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
     if not payload or not getattr(payload, "sub", None):
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
@@ -53,7 +58,8 @@ async def admin_websocket(websocket: WebSocket):
                     active_connections=ws_manager.active_connections_count if ws_manager else 0,
                     max_connections=getattr(ws_manager, "max_connections", 100),
                 )
-                await websocket.send_json({"type": "metrics", "data": metrics})
+                metrics_data = metrics.model_dump() if hasattr(metrics, "model_dump") else metrics
+                await websocket.send_json({"type": "metrics", "data": metrics_data})
             else:
                 await websocket.send_json(
                     {"type": "metrics", "data": {"detail": "Collector unavailable"}}

@@ -18,6 +18,7 @@
         <input type="password" id="password" placeholder="Password">
         <button onclick="login()">Войти</button>
     </div>
+    <script src="/static/js/auth.js"></script>
     <script>
         async function login() {
             const resp = await fetch('/api/v1/auth/login', {
@@ -30,7 +31,7 @@
             });
             if (resp.ok) {
                 const data = await resp.json();
-                window.__ACCESS_TOKEN__ = data.access_token;
+                Auth.setAccessToken(data.access_token);
                 location.href = '/admin/dashboard';
             } else {
                 alert('Ошибка входа');
