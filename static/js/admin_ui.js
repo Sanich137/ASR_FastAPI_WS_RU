@@ -44,5 +44,12 @@
     return true;
   }
 
-  window.AdminUI = { renderBadge, renderDate, renderDuration, initAdmin };
+  function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  window.AdminUI = { renderBadge, renderDate, renderDuration, escapeHtml, initAdmin };
 })();

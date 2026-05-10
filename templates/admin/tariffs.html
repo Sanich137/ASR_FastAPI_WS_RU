@@ -1,32 +1,104 @@
 {% extends "admin/base_admin.html" %}
 {% block title %}Тарифы{% endblock %}
 {% block content %}
-<h1>Тарифные планы</h1>
-<div class="card">
-    <p>Загрузка тарифов...</p>
-    <table id="plansTable" border="1" cellpadding="8" style="width:100%;border-collapse:collapse;">
-        <thead>
-            <tr><th>Код</th><th>Название</th><th>Запросов/мин</th><th>Цена/мес</th><th>Активен</th></tr>
-        </thead>
-        <tbody></tbody>
+<div class="container">
+  <div class="flex items-center justify-between" style="margin-bottom:24px;">
+    <h1 style="margin:0;">Тарифные планы</h1>
+    <button class="btn btn-primary" onclick="openTariffModal()">+ Создать тариф</button>
+  </div>
+
+  <div class="card">
+    <table id="plansTable" style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr style="border-bottom:1px solid var(--color-border); text-align:left;">
+          <th style="padding:8px;">Код</th>
+          <th style="padding:8px;">Название</th>
+          <th style="padding:8px;">Запросов/мин</th>
+          <th style="padding:8px;">Аудио (сек)</th>
+          <th style="padding:8px;">Цена/мес</th>
+          <th style="padding:8px;">Статус</th>
+          <th style="padding:8px; width:100px;">Действия</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td colspan="7" style="padding:16px;">
+          <div class="skeleton" style="height:24px; margin-bottom:8px;"></div>
+          <div class="skeleton" style="height:24px; margin-bottom:8px;"></div>
+          <div class="skeleton" style="height:24px;"></div>
+        </td></tr>
+      </tbody>
     </table>
+    <div id="plansEmpty" style="display:none; padding:24px; text-align:center; color:var(--color-muted);">
+      Нет тарифных планов
+    </div>
+  </div>
 </div>
+
+{% include "admin/components/tariff_modal.html" %}
+{% endblock %}
+
+{% block scripts %}
 <script>
-    async function loadPlans() {
-        const resp = await fetch('/api/v1/admin/tariffs');
-        const data = await resp.json();
-        const tbody = document.querySelector('#plansTable tbody');
-        tbody.innerHTML = data.map(p => `
-            <tr>
-                <td>${p.code}</td>
-                <td>${p.name}</td>
-                <td>${p.max_requests_per_minute}</td>
-                <td>${p.price_per_month || '-'}</td>
-                <td>${p.is_active ? 'Да' : 'Нет'}</td>
-            </tr>
-        `).join('');
-        document.querySelector('.card p').style.display = 'none';
+  let _plans = [];
+
+  async function loadPlans() {
+    try {
+      const resp = await Auth.apiFetch('/api/v1/admin/tariffs');
+      if (!resp.ok) throw new Error('Ошибка загрузки');
+      const data = await resp.json();
+      _plans = data;
+      renderPlans();
+    } catch (e) {
+      UI.toast('Не удалось загрузить тарифы', 'error');
+      document.querySelector('#plansTable tbody').innerHTML = '<tr><td colspan="7" style="padding:16px; color:var(--color-danger);">Ошибка загрузки</td></tr>';
     }
-    loadPlans();
+  }
+
+  function renderPlans() {
+    const tbody = document.querySelector('#plansTable tbody');
+    if (!_plans.length) {
+      tbody.innerHTML = '';
+      document.getElementById('plansEmpty').style.display = 'block';
+      return;
+    }
+    document.getElementById('plansEmpty').style.display = 'none';
+    tbody.innerHTML = _plans.map(p => `
+      <tr style="border-bottom:1px solid var(--color-border);" onmouseover="this.style.background='rgba(148,163,184,0.08)'" onmouseout="this.style.background='transparent'">
+        <td style="padding:8px;">${AdminUI.escapeHtml(p.code)}</td>
+        <td style="padding:8px;">${AdminUI.escapeHtml(p.name)}</td>
+        <td style="padding:8px;">${p.max_requests_per_minute}</td>
+        <td style="padding:8px;">${p.max_audio_duration_sec || '-'}</td>
+        <td style="padding:8px;">${p.price_per_month != null ? p.price_per_month : '-'}</td>
+        <td style="padding:8px;">${AdminUI.renderBadge(p.is_active ? 'active' : 'cancelled')}</td>
+        <td style="padding:8px;">
+          <button class="btn btn-ghost btn-sm" onclick="editTariff('${p.id}')" title="Редактировать">✎</button>
+          <button class="btn btn-ghost btn-sm" onclick="deactivateTariff('${p.id}')" title="Деактивировать">🗑</button>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function deactivateTariff(id) {
+    const plan = _plans.find(p => p.id === id);
+    const name = plan ? plan.name : id;
+    UI.confirmDialog('Деактивировать тариф', `Деактивировать тариф "${name}"? Существующие подписки останутся активными, но новые подписки на этот тариф будут невозможны.`, async () => {
+      try {
+        const resp = await Auth.apiFetch(`/api/v1/admin/tariffs/${id}`, {method: 'DELETE'});
+        if (!resp.ok) throw new Error();
+        UI.toast('Тариф деактивирован', 'success');
+        loadPlans();
+      } catch (e) {
+        UI.toast('Не удалось деактивировать тариф', 'error');
+      }
+    });
+  }
+
+  function editTariff(id) {
+    const plan = _plans.find(p => p.id === id);
+    if (!plan) return;
+    openTariffModal(plan);
+  }
+
+  loadPlans();
 </script>
 {% endblock %}

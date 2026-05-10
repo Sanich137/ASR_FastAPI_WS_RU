@@ -1,0 +1,137 @@
+<dialog id="tariffDialog" style="border:none; border-radius:var(--radius); padding:0; background:var(--color-surface); color:var(--color-text); max-width:480px; width:90vw;">
+  <form method="dialog" style="padding:24px;" onsubmit="return false;">
+    <h3 style="margin:0 0 16px;" id="modalTitle">Создать тариф</h3>
+    <input type="hidden" id="tariffId">
+
+    <div class="form-group" style="margin-bottom:12px;">
+      <label class="text-sm text-muted">Код (латиница, цифры, _)</label>
+      <input class="input" id="tCode" type="text" placeholder="basic_plan" oninput="validateTariffForm()">
+      <div class="text-sm" id="eCode" style="color:var(--color-danger); margin-top:4px; display:none;"></div>
+    </div>
+
+    <div class="form-group" style="margin-bottom:12px;">
+      <label class="text-sm text-muted">Название</label>
+      <input class="input" id="tName" type="text" placeholder="Базовый" oninput="validateTariffForm()">
+      <div class="text-sm" id="eName" style="color:var(--color-danger); margin-top:4px; display:none;"></div>
+    </div>
+
+    <div class="form-group" style="margin-bottom:12px;">
+      <label class="text-sm text-muted">Запросов в минуту</label>
+      <input class="input" id="tRpm" type="number" min="1" placeholder="60" oninput="validateTariffForm()">
+      <div class="text-sm" id="eRpm" style="color:var(--color-danger); margin-top:4px; display:none;"></div>
+    </div>
+
+    <div class="form-group" style="margin-bottom:12px;">
+      <label class="text-sm text-muted">Макс. длительность аудио (сек)</label>
+      <input class="input" id="tDuration" type="number" min="0" placeholder="300">
+    </div>
+
+    <div class="form-group" style="margin-bottom:12px;">
+      <label class="text-sm text-muted">Цена в месяц (руб.)</label>
+      <input class="input" id="tPrice" type="number" step="0.01" min="0" placeholder="0.00">
+    </div>
+
+    <div class="form-group" style="margin-bottom:16px;">
+      <label class="flex items-center gap-2" style="cursor:pointer;">
+        <input type="checkbox" id="tActive" checked>
+        <span class="text-sm">Активен</span>
+      </label>
+    </div>
+
+    <div style="display:flex; gap:8px; justify-content:flex-end;">
+      <button class="btn btn-ghost" type="button" onclick="closeTariffModal()">Отмена</button>
+      <button class="btn btn-primary" type="button" id="btnSaveTariff" onclick="saveTariff()">Сохранить</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+  function openTariffModal(plan) {
+    const dlg = document.getElementById('tariffDialog');
+    document.getElementById('modalTitle').textContent = plan ? 'Редактировать тариф' : 'Создать тариф';
+    document.getElementById('tariffId').value = plan ? plan.id : '';
+    document.getElementById('tCode').value = plan ? plan.code : '';
+    document.getElementById('tName').value = plan ? plan.name : '';
+    document.getElementById('tRpm').value = plan ? plan.max_requests_per_minute : '';
+    document.getElementById('tDuration').value = plan ? (plan.max_audio_duration_sec || '') : '';
+    document.getElementById('tPrice').value = plan ? (plan.price_per_month != null ? plan.price_per_month : '') : '';
+    document.getElementById('tActive').checked = plan ? plan.is_active : true;
+    ['eCode','eName','eRpm'].forEach(id => document.getElementById(id).style.display='none');
+    validateTariffForm();
+    dlg.showModal();
+  }
+
+  function closeTariffModal() {
+    document.getElementById('tariffDialog').close();
+  }
+
+  function validateTariffForm() {
+    let ok = true;
+    const code = document.getElementById('tCode').value.trim();
+    const name = document.getElementById('tName').value.trim();
+    const rpm = document.getElementById('tRpm').value;
+
+    const eCode = document.getElementById('eCode');
+    if (!/^[a-z0-9_]{3,50}$/.test(code)) {
+      eCode.textContent = 'Код обязателен: 3–50 символов, только a-z, 0-9, _';
+      eCode.style.display = 'block';
+      ok = false;
+    } else { eCode.style.display = 'none'; }
+
+    const eName = document.getElementById('eName');
+    if (!name || name.length > 255) {
+      eName.textContent = 'Название обязательно, до 255 символов';
+      eName.style.display = 'block';
+      ok = false;
+    } else { eName.style.display = 'none'; }
+
+    const eRpm = document.getElementById('eRpm');
+    if (!rpm || parseInt(rpm) < 1) {
+      eRpm.textContent = 'Минимум 1 запрос в минуту';
+      eRpm.style.display = 'block';
+      ok = false;
+    } else { eRpm.style.display = 'none'; }
+
+    const btn = document.getElementById('btnSaveTariff');
+    btn.disabled = !ok;
+    btn.style.opacity = ok ? '1' : '0.5';
+    return ok;
+  }
+
+  async function saveTariff() {
+    if (!validateTariffForm()) return;
+    const id = document.getElementById('tariffId').value;
+    const payload = {
+      code: document.getElementById('tCode').value.trim(),
+      name: document.getElementById('tName').value.trim(),
+      max_requests_per_minute: parseInt(document.getElementById('tRpm').value),
+      max_audio_duration_sec: document.getElementById('tDuration').value ? parseInt(document.getElementById('tDuration').value) : null,
+      price_per_month: document.getElementById('tPrice').value ? parseFloat(document.getElementById('tPrice').value) : null,
+      is_active: document.getElementById('tActive').checked,
+    };
+
+    const btn = document.getElementById('btnSaveTariff');
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>';
+
+    try {
+      const url = id ? `/api/v1/admin/tariffs/${id}` : '/api/v1/admin/tariffs';
+      const method = id ? 'PUT' : 'POST';
+      const resp = await Auth.apiFetch(url, {
+        method,
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      if (!resp.ok) throw new Error();
+      UI.toast(id ? 'Тариф обновлён' : 'Тариф создан', 'success');
+      closeTariffModal();
+      if (typeof loadPlans === 'function') loadPlans();
+    } catch (e) {
+      UI.toast('Не удалось сохранить тариф', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  }
+</script>
