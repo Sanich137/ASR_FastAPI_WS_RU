@@ -9,7 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.deps import get_current_user, require_admin, require_superadmin
-from db.models import ApiKey, Plan, Subscription, SystemLog, Transaction, User
+from core.security import create_access_token  # type: ignore[import-untyped]
+from db.models import ApiKey, ASRSession, Plan, Subscription, SystemLog, Transaction, User
 from db.session import get_db_session
 from models.admin import (
     AdminApiKeyResponse,
@@ -232,8 +233,8 @@ async def admin_user_sessions(
     return [
         {
             "id": s.id,
-            "session_type": s.session_type.value,
-            "status": s.status.value,
+            "session_type": s.session_type,
+            "status": s.status,
             "audio_duration_sec": s.audio_duration_sec,
             "created_at": s.created_at,
             "completed_at": s.completed_at,
@@ -254,8 +255,38 @@ async def admin_user_impersonate(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден"
         )
-    token = await admin_service.impersonate_user(user)
+    token = create_access_token({"sub": user.id, "role": user.role})
     return {"access_token": token, "token_type": "bearer"}
+
+
+@router.get("/sessions/{session_id}")
+async def admin_session_detail(
+    session_id: str,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Детали ASR-сессии."""
+    result = await db.execute(select(ASRSession).where(ASRSession.id == session_id))
+    s = result.scalar_one_or_none()
+    if not s:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Сессия не найдена"
+        )
+    return {
+        "id": s.id,
+        "user_id": s.user_id,
+        "session_type": s.session_type,
+        "status": s.status,
+        "audio_duration_sec": s.audio_duration_sec,
+        "processing_duration_sec": s.processing_duration_sec,
+        "cost": float(s.cost) if s.cost is not None else None,
+        "result_json": s.result_json,
+        "created_at": s.created_at,
+        "completed_at": s.completed_at,
+        "error_message": s.error_message,
+        "request_ip": s.request_ip,
+        "user_agent": s.user_agent,
+    }
 
 
 @router.get("/tariffs", response_model=list[AdminPlanResponse])
@@ -361,13 +392,25 @@ async def admin_tariff_delete(
 @router.get("/subscriptions", response_model=list[AdminSubscriptionResponse])
 async def admin_subscriptions_list(
     pagination: PaginationParams = Depends(),
+    user_id: Optional[str] = None,
     current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db_session),
 ):
     """Список подписок."""
-    subs, total = await admin_service.get_subscriptions(
-        db, page=pagination.page, per_page=pagination.per_page
-    )
+    if user_id:
+        from sqlalchemy import select
+        result = await db.execute(
+            select(Subscription)
+            .where(Subscription.user_id == user_id)
+            .order_by(Subscription.created_at.desc())
+            .offset((pagination.page - 1) * pagination.per_page)
+            .limit(pagination.per_page)
+        )
+        subs = result.scalars().all()
+    else:
+        subs, total = await admin_service.get_subscriptions(
+            db, page=pagination.page, per_page=pagination.per_page
+        )
     return [
         AdminSubscriptionResponse(
             id=s.id,

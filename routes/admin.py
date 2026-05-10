@@ -36,6 +36,16 @@ async def admin_users_page(
     return templates.TemplateResponse("admin/users.html", {"request": request})
 
 
+@router.get("/users/{user_id}")
+async def admin_user_detail_page(
+    request: Request,
+    user_id: str,
+    _admin=Depends(require_admin),
+):
+    """Страница деталей пользователя."""
+    return templates.TemplateResponse("admin/user_detail.html", {"request": request, "user_id": user_id})
+
+
 @router.get("/sessions")
 async def admin_sessions_page(
     request: Request,
@@ -43,6 +53,16 @@ async def admin_sessions_page(
 ):
     """Страница мониторинга сессий."""
     return templates.TemplateResponse("admin/sessions.html", {"request": request})
+
+
+@router.get("/sessions/{session_id}")
+async def admin_session_detail_page(
+    request: Request,
+    session_id: str,
+    _admin=Depends(require_admin),
+):
+    """Страница деталей сессии."""
+    return templates.TemplateResponse("admin/session_detail.html", {"request": request, "session_id": session_id})
 
 
 @router.get("/subscriptions")

@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import settings
 
 from core.deps import get_current_user
-from core.security import decode_token  # type: ignore[import-untyped]
+from core.security import create_access_token, decode_token  # type: ignore[import-untyped]
 from db.models import User
 from db.session import get_db_session
 from models.auth import (

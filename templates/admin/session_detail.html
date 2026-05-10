@@ -1,0 +1,130 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Сессия — Админ-панель{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="flex items-center" style="margin-bottom:24px; gap:16px;">
+    <a href="javascript:history.back()" class="btn btn-ghost btn-sm">← Назад</a>
+    <h1 style="margin:0;">Детали сессии</h1>
+    <span id="sessionId" class="text-muted" style="margin-left:auto; font-family:monospace;"></span>
+  </div>
+
+  <div class="card" style="margin-bottom:24px;">
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:16px;">
+      <div class="form-group">
+        <label class="text-sm text-muted">ID</label>
+        <div id="dId" style="font-weight:600;"></div>
+      </div>
+      <div class="form-group">
+        <label class="text-sm text-muted">Тип</label>
+        <div id="dType" style="font-weight:600;"></div>
+      </div>
+      <div class="form-group">
+        <label class="text-sm text-muted">Статус</label>
+        <div id="dStatus"></div>
+      </div>
+      <div class="form-group">
+        <label class="text-sm text-muted">Пользователь</label>
+        <div id="dUser" class="text-muted">—</div>
+      </div>
+      <div class="form-group">
+        <label class="text-sm text-muted">Длительность аудио</label>
+        <div id="dAudioDuration" class="text-muted">—</div>
+      </div>
+      <div class="form-group">
+        <label class="text-sm text-muted">Длительность обработки</label>
+        <div id="dProcessingDuration" class="text-muted">—</div>
+      </div>
+      <div class="form-group">
+        <label class="text-sm text-muted">Стоимость</label>
+        <div id="dCost" class="text-muted">—</div>
+      </div>
+      <div class="form-group">
+        <label class="text-sm text-muted">Создана</label>
+        <div id="dCreated" class="text-muted">—</div>
+      </div>
+      <div class="form-group">
+        <label class="text-sm text-muted">Завершена</label>
+        <div id="dCompleted" class="text-muted">—</div>
+      </div>
+      <div class="form-group">
+        <label class="text-sm text-muted">IP</label>
+        <div id="dIp" class="text-muted">—</div>
+      </div>
+      <div class="form-group">
+        <label class="text-sm text-muted">User-Agent</label>
+        <div id="dUa" class="text-muted" style="word-break:break-all;">—</div>
+      </div>
+      <div class="form-group">
+        <label class="text-sm text-muted">Ошибка</label>
+        <div id="dError" class="text-muted" style="color:var(--color-danger);">—</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="flex items-center justify-between" style="margin-bottom:16px;">
+      <h3 style="margin:0;">Результат</h3>
+      <button class="btn btn-ghost btn-sm" onclick="downloadResult()">Скачать JSON</button>
+    </div>
+    <pre id="dResult" style="background:var(--color-bg); padding:16px; border-radius:var(--radius); overflow:auto; max-height:400px; font-size:12px; color:var(--color-text);">—</pre>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const SESSION_ID = '{{ session_id }}';
+  let _session = null;
+
+  async function loadSession() {
+    try {
+      const resp = await Auth.apiFetch(`/api/v1/admin/sessions/${SESSION_ID}`);
+      if (!resp.ok) throw new Error();
+      _session = await resp.json();
+      renderSession();
+    } catch (e) {
+      UI.toast('Не удалось загрузить сессию', 'error');
+    }
+  }
+
+  function renderSession() {
+    if (!_session) return;
+    document.getElementById('sessionId').textContent = _session.id;
+    document.getElementById('dId').textContent = _session.id;
+    document.getElementById('dType').textContent = _session.session_type;
+    document.getElementById('dStatus').innerHTML = AdminUI.renderBadge(_session.status);
+    document.getElementById('dUser').textContent = _session.user_id || '—';
+    document.getElementById('dAudioDuration').textContent = AdminUI.renderDuration(_session.audio_duration_sec);
+    document.getElementById('dProcessingDuration').textContent = AdminUI.renderDuration(_session.processing_duration_sec);
+    document.getElementById('dCost').textContent = _session.cost != null ? _session.cost + ' ₽' : '—';
+    document.getElementById('dCreated').textContent = AdminUI.renderDate(_session.created_at);
+    document.getElementById('dCompleted').textContent = AdminUI.renderDate(_session.completed_at);
+    document.getElementById('dIp').textContent = _session.request_ip || '—';
+    document.getElementById('dUa').textContent = _session.user_agent || '—';
+    document.getElementById('dError').textContent = _session.error_message || '—';
+
+    const resultEl = document.getElementById('dResult');
+    if (_session.result_json) {
+      resultEl.textContent = JSON.stringify(_session.result_json, null, 2);
+    } else {
+      resultEl.textContent = 'Нет данных';
+    }
+  }
+
+  function downloadResult() {
+    if (!_session || !_session.result_json) {
+      UI.toast('Нет данных для скачивания', 'warning');
+      return;
+    }
+    const blob = new Blob([JSON.stringify(_session.result_json, null, 2)], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `session_${SESSION_ID}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  loadSession();
+</script>
+{% endblock %}

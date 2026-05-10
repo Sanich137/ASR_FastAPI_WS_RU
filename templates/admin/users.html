@@ -1,34 +1,132 @@
 {% extends "admin/base_admin.html" %}
 {% block title %}Пользователи{% endblock %}
 {% block content %}
-<h1>Пользователи</h1>
-<div class="card">
-    <p>Загрузка списка пользователей...</p>
-    <table id="usersTable" border="1" cellpadding="8" style="width:100%;border-collapse:collapse;">
-        <thead>
-            <tr><th>ID</th><th>Email</th><th>Имя</th><th>Роль</th><th>Активен</th><th>Telegram</th><th>Действия</th></tr>
-        </thead>
-        <tbody></tbody>
+<div class="container">
+  <div class="flex items-center justify-between" style="margin-bottom:24px;">
+    <h1 style="margin:0;">Пользователи</h1>
+    <div class="flex items-center" style="gap:8px;">
+      <input class="input" id="searchInput" type="text" placeholder="Поиск по email или имени..." style="width:260px;">
+    </div>
+  </div>
+
+  <div class="flex items-center" style="border-bottom:1px solid var(--color-border); margin-bottom:16px; gap:4px;">
+    <button class="tab-btn active" data-filter-role="all" onclick="setRoleFilter('all')">Все</button>
+    <button class="tab-btn" data-filter-role="user" onclick="setRoleFilter('user')">User</button>
+    <button class="tab-btn" data-filter-role="admin" onclick="setRoleFilter('admin')">Admin</button>
+    <button class="tab-btn" data-filter-role="superadmin" onclick="setRoleFilter('superadmin')">Superadmin</button>
+    <div style="margin-left:auto;" class="flex items-center" style="gap:4px;">
+      <button class="tab-btn active" data-filter-status="all" onclick="setStatusFilter('all')">Все</button>
+      <button class="tab-btn" data-filter-status="active" onclick="setStatusFilter('active')">Активен</button>
+      <button class="tab-btn" data-filter-status="blocked" onclick="setStatusFilter('blocked')">Заблокирован</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <table id="usersTable" style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr style="border-bottom:1px solid var(--color-border); text-align:left;">
+          <th style="padding:8px;">Email</th>
+          <th style="padding:8px;">Имя</th>
+          <th style="padding:8px;">Роль</th>
+          <th style="padding:8px;">Статус</th>
+          <th style="padding:8px;">Telegram</th>
+          <th style="padding:8px;">Регистрация</th>
+          <th style="padding:8px;">Последний вход</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td colspan="7" style="padding:16px;">
+          <div class="skeleton" style="height:24px; margin-bottom:8px;"></div>
+          <div class="skeleton" style="height:24px; margin-bottom:8px;"></div>
+          <div class="skeleton" style="height:24px;"></div>
+        </td></tr>
+      </tbody>
     </table>
+    <div id="usersEmpty" style="display:none; padding:24px; text-align:center; color:var(--color-muted);">
+      Пользователи не найдены
+    </div>
+  </div>
 </div>
+
+<style>
+  .tab-btn { background:none; border:none; color:var(--color-muted); padding:8px 12px; cursor:pointer; border-bottom:2px solid transparent; font-size:13px; }
+  .tab-btn.active { color:var(--color-primary); border-bottom-color:var(--color-primary); }
+  tr.clickable { cursor:pointer; }
+  tr.clickable:hover { background:rgba(148,163,184,0.08); }
+</style>
+{% endblock %}
+
+{% block scripts %}
 <script>
-    async function loadUsers() {
-        const resp = await fetch('/api/v1/admin/users');
-        const data = await resp.json();
-        const tbody = document.querySelector('#usersTable tbody');
-        tbody.innerHTML = data.map(u => `
-            <tr>
-                <td>${u.id}</td>
-                <td>${u.email}</td>
-                <td>${u.full_name || ''}</td>
-                <td>${u.role}</td>
-                <td>${u.is_active ? 'Да' : 'Нет'}</td>
-                <td>${u.telegram_linked ? 'Да' : 'Нет'}</td>
-                <td><button onclick="location.href='/admin/users'">Открыть</button></td>
-            </tr>
-        `).join('');
-        document.querySelector('.card p').style.display = 'none';
+  let _users = [];
+  let _roleFilter = 'all';
+  let _statusFilter = 'all';
+  let _searchDebounce = null;
+
+  async function loadUsers() {
+    try {
+      const resp = await Auth.apiFetch('/api/v1/admin/users');
+      if (!resp.ok) throw new Error();
+      const data = await resp.json();
+      _users = data;
+      renderUsers();
+    } catch (e) {
+      UI.toast('Не удалось загрузить пользователей', 'error');
+      document.querySelector('#usersTable tbody').innerHTML = '<tr><td colspan="7" style="padding:16px; color:var(--color-danger);">Ошибка загрузки</td></tr>';
     }
-    loadUsers();
+  }
+
+  function renderUsers() {
+    const tbody = document.querySelector('#usersTable tbody');
+    const term = document.getElementById('searchInput').value.trim().toLowerCase();
+
+    let filtered = _users.filter(u => {
+      if (_roleFilter !== 'all' && u.role !== _roleFilter) return false;
+      if (_statusFilter === 'active' && !u.is_active) return false;
+      if (_statusFilter === 'blocked' && u.is_active) return false;
+      if (term) {
+        const hay = (u.email + ' ' + (u.full_name || '')).toLowerCase();
+        if (!hay.includes(term)) return false;
+      }
+      return true;
+    });
+
+    if (!filtered.length) {
+      tbody.innerHTML = '';
+      document.getElementById('usersEmpty').style.display = 'block';
+      return;
+    }
+    document.getElementById('usersEmpty').style.display = 'none';
+    tbody.innerHTML = filtered.map(u => `
+      <tr class="clickable" onclick="location.href='/admin/users/${encodeURIComponent(u.id)}'">
+        <td style="padding:8px;">${AdminUI.escapeHtml(u.email)}</td>
+        <td style="padding:8px;">${AdminUI.escapeHtml(u.full_name || '—')}</td>
+        <td style="padding:8px;">${AdminUI.renderBadge(u.role)}</td>
+        <td style="padding:8px;">${AdminUI.renderBadge(u.is_active ? 'active' : 'cancelled')}</td>
+        <td style="padding:8px;">${u.telegram_linked ? 'Да' : 'Нет'}</td>
+        <td style="padding:8px;">${AdminUI.renderDate(u.created_at)}</td>
+        <td style="padding:8px;">${AdminUI.renderDate(u.last_login_at)}</td>
+      </tr>
+    `).join('');
+  }
+
+  function setRoleFilter(val) {
+    _roleFilter = val;
+    document.querySelectorAll('[data-filter-role]').forEach(b => b.classList.toggle('active', b.dataset.filterRole === val));
+    renderUsers();
+  }
+
+  function setStatusFilter(val) {
+    _statusFilter = val;
+    document.querySelectorAll('[data-filter-status]').forEach(b => b.classList.toggle('active', b.dataset.filterStatus === val));
+    renderUsers();
+  }
+
+  document.getElementById('searchInput').addEventListener('input', () => {
+    clearTimeout(_searchDebounce);
+    _searchDebounce = setTimeout(renderUsers, 300);
+  });
+
+  loadUsers();
 </script>
 {% endblock %}
