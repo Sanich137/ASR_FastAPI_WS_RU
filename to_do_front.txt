@@ -393,7 +393,7 @@
 | `templates/user/profile.html` | Форма: full_name (редактируемое), email (read-only или с верификацией), смена пароля (old + new + confirm). Кнопка «Удалить аккаунт» — `confirmDialog` + soft-delete. |
 | `templates/user/api_keys.html` | Таблица ключей: имя, префикс (последние 4 символа), дата создания, last_used_at, статус. Кнопка «Создать ключ» — модальное окно с именем. При создании: показать ключ один раз в модалке с кнопкой «Копировать». Кнопка «Отозвать» — `confirmDialog`. |
 
-**UX:** [не валидировано - требуется регистрация]
+**UX:** [x]
 - **API-ключ при создании:** модалка с жёлтым предупреждением «Скопируйте сейчас, ключ больше не будет показан».
 - **Профиль:** inline-валидация (minlength для пароля).
 
@@ -415,79 +415,202 @@
 
 ## Этап 7. Фронтенд: Админ-панель (Jinja2 + JS)
 
-**Задача:** Доработать серверно-рендеримый интерфейс администрирования с единой дизайн-системой, real-time мониторингом и полноценным CRUD.
+**Задача:** Доработать существующий серверно-рендеримый интерфейс администрирования (созданный в Этапе 4) до полнофункционального состояния с единой дизайн-системой, real-time мониторингом, CRUD-операциями и единообразным UX.
 
-### Шаг 7.0. Инфраструктура админки
-**Цель:** Унифицировать UX админки с пользовательским фронтом.
+**Контекст:** В Этапе 4 созданы каркасы шаблонов (`templates/admin/base_admin.html`, `dashboard.html`, `login.html`, `users.html`, `sessions.html`, `subscriptions.html`, `transactions.html`, `tariffs.html`, `api_keys.html`, `logs.html`, `settings.html`, `telegram.html`) и API (`api/v1/endpoints/admin.py`). В Этапе 6 созданы `static/css/design-system.css` и `static/js/ui.js` с единой тёмной темой, toast, confirmDialog, skeleton, spinner. Админ-панель должна переиспользовать эти компоненты.
 
-| Файл | Действие |
-|------|----------|
-| `static/js/admin_ui.js` | Создать. Расширяет `ui.js`: `adminToast`, `adminConfirm`, `renderBadge(status)`, `renderDate(iso)`. Функция `initAdmin()` — проверка роли admin при загрузке. |
-| `templates/admin/base_admin.html` | Изменить. Подключить `design-system.css` (для единых переменных), `admin_ui.js`. Добавить `<div id="toast-container">`. Добавить CSRF-meta. |
+---
 
-### Шаг 7.1. Dashboard — real-time + история метрик
-**Цель:** Заменить статический fetch на живой мониторинг.
+### Шаг 7.0. Инфраструктура админки (подключение дизайн-системы) [x]
+**Цель:** Унифицировать визуальный стиль админки с пользовательским кабинетом и добавить JS-утилиты для админских страниц.
 
 | Файл | Действие |
 |------|----------|
-| `templates/admin/dashboard.html` | Изменить. (1) Виджеты системных метрик подключаются к `/api/v1/admin/ws` (WebSocket с auth-фреймом). Данные обновляются в реальном времени. (2) Добавить Chart.js график «История нагрузки за 24ч»: endpoint `/api/v1/admin/metrics/history?range=24h` (заменить заглушку на реальную выборку из `SystemLog` за последние 24 часа, агрегируя по 5-минутным интервалам). |
-| `static/js/admin_dashboard.js` | Создать. WS-клиент для `/api/v1/admin/ws`: подключение, auth-фрейм, heartbeat (ping каждые 30с), обработка `status_response`, обновление DOM-виджетов, reconnect. Алерты: если `gpu_utilization > 90` или `queue_depth > 50` — показать баннер «Высокая нагрузка». |
+| `templates/admin/base_admin.html` | **Изменить.** В `<head>` подключить `design-system.css` (перед существующими стилями). В конце `<body>` подключить `auth.js`, `ui.js`, `admin_ui.js`. Добавить `<div id="toast-container">` внутри body. Добавить CSRF `<meta name="csrf-token">`. Сохранить существующую структуру sidebar (220px, тёмный) — не ломать. |
+| `static/js/admin_ui.js` | **Создать.** Расширяет `ui.js` админ-специфичными функциями: `renderBadge(status)` (completed→badge-success, failed→badge-danger, processing→badge-warning), `renderDate(iso)` (формат `DD.MM.YYYY HH:MM`), `renderDuration(sec)` (мин:сек), `initAdmin()` — при загрузке страницы проверяет `Auth.getAccessToken()`, если нет — делает silent refresh, если не удалось — редирект на `/admin/login`. |
 
-**Бэкенд (если нужно):**
-- Реализовать `/api/v1/admin/metrics/history` — выборка из `SystemLog` где `component = 'metrics'` и `created_at > now - range`, группировка по временным слотам.
+**Критерии приёмки:**
+- Все админ-страницы используют CSS-переменные `--color-bg`, `--color-surface`, `--color-primary` из `design-system.css`.
+- Toast-уведомления работают на всех админ-страницах (красный для ошибок, зелёный для успеха, жёлтый для предупреждений).
+- Нет конфликтов стилей между старым admin-CSS и новым `design-system.css`.
 
-### Шаг 7.2. CRUD тарифов
-**Цель:** Заменить readonly-таблицу на полноценное управление.
+**Результат шага 7.0:** созданы `static/js/admin_ui.js` и `templates/admin/base_admin.html` (обновлён с design-system.css, toast-контейнером, CSRF, мобильным меню, подключением JS-модулей).
+
+---
+
+### Шаг 7.1. Dashboard — real-time метрики + Chart.js [x]
+**Цель:** Заменить статический `fetch('/api/v1/admin/metrics')` на живой WebSocket-поток и добавить график истории нагрузки.
 
 | Файл | Действие |
 |------|----------|
-| `templates/admin/tariffs.html` | Изменить. Добавить кнопку «Создать тариф». Таблица: код, название, лимит запросов, лимит аудио, цена, статус. Действия: редактировать, деактивировать. |
-| `templates/admin/components/tariff_modal.html` | Создать. `<dialog>` с формой: code, name, max_requests_per_minute, max_audio_duration_sec, price_per_month, is_active (toggle). Отправка через `fetch` (POST/PUT). При успехе — закрытие модалки + обновление таблицы. |
+| `templates/admin/dashboard.html` | **Изменить.** (1) Виджеты (CPU, GPU, активные задачи, очередь, uptime, adapter_status) обновляются через WebSocket `/api/v1/admin/ws` (auth-фрейм сразу после `onopen`). (2) Добавлен canvas для Chart.js — график «Нагрузка за 24 часа» (линия: CPU + GPU utilization). Данные: `Auth.apiFetch('/api/v1/admin/metrics/history?range=24h')`. (3) Баннер «Высокая нагрузка» при алертах WS (CPU>90% или queue>50). (4) Скрипты вынесены в `{% block scripts %}` для корректного порядка загрузки после `auth.js`. |
+| `static/js/admin_dashboard.js` | **Создать.** Класс `AdminDashboardWS`. Методы: `connect(token)`, auth-фрейм, обработка `metrics`/`alert`, обновление DOM-виджетов. Heartbeat каждые 30 сек. Reconnect с exponential backoff (max 30с). При закрытии с кодом 1008/1011 (истёкший токен) — автоматический `Auth.refreshToken()` и переподключение, иначе редирект на `/admin/login`. |
+| `api/v1/endpoints/admin.py` | **Доработан.** `GET /api/v1/admin/metrics/history` — реальная выборка из `SystemLog` (`component = 'SystemMetricsCollector'`) за период `range` (1h/24h/7d), группировка по 5-минутным слотам со средними значениями. Возвращает массив `{timestamp, cpu, gpu, active_connections, queue_depth}`. |
+| `api/v1/endpoints/admin_ws.py` | **Доработан.** Исправлена сериализация `WSStatusResponse` через `model_dump()`. Добавлена graceful-обработка `TokenExpiredException`/`InvalidTokenException` при auth (close 1008 без 500-ошибки в логах). |
+| `static/js/auth.js` | **Доработан.** `setAccessToken()` теперь синхронно пишет `access_token` в cookie (`SameSite=Lax`), чтобы SSR-переходы на `/admin/*` видели токен. `refreshToken()` и `apiFetch()` обновлены для работы с cookie-based сессиями. |
+| `templates/admin/login.html` | **Доработан.** Использует `Auth.setAccessToken(data.access_token)` вместо `window.__ACCESS_TOKEN__`, обеспечивая запись в cookie. |
+| `core/exception_handlers.py` | **Доработан.** При 401/403 для HTML-запросов выполняется редирект на `/admin/login` (или `/login`), с защитой от циклического редиректа (не редиректит, если уже на странице логина). |
+
+**Отладка и унификация полей метрик:**
+- Поле CPU в `WSStatusResponse` и `SystemMetricsCollector` называется `cpu_utilization_percent`; в JS и history endpoint используется единое имя `cpu_utilization_percent` (ранее было расхождение `cpu_percent` vs `cpu`).
+- Поле GPU называется `gpu_utilization_percent` (ранее `gpu_utilization`).
+
+**UX-детали (проверены):**
+- **Skeleton:** при первой загрузке виджеты показывают skeleton-заглушки, пока не придёт первый WS-фрейм.
+- **Empty state:** если нет истории метрик — «Нет данных за выбранный период».
+- **Ошибка WS:** при разрыве соединения виджеты переходят в статус reconnecting / disconnected.
+
+**Результат шага 7.1:** Dashboard полностью функционален. Real-time метрики приходят через WS `/api/v1/admin/ws`, виджеты обновляются (CPU, GPU, задачи, очередь, uptime, adapter_status). Chart.js отображает историю из `/api/v1/admin/metrics/history`. Авторизация работает корректно: access token синхронизируется с cookie, при истечении токена WS делает silent refresh. SSR-редиректы 401→login работают без циклов.
+
+---
+
+### Шаг 7.2. CRUD тарифных планов (модальные окна) [x]
+**Цель:** Заменить readonly-таблицу на полноценное создание/редактирование/деактивацию тарифов.
+
+| Файл | Действие |
+|------|----------|
+| `templates/admin/tariffs.html` | **Изменён.** Кнопка «Создать тариф», таблица с кодом, названием, лимитами, ценой, статусом (badge), действиями (редактировать/деактивировать). Skeleton, empty state. |
+| `templates/admin/components/tariff_modal.html` | **Создан.** `<dialog id="tariffDialog">` с формой: code, name, max_requests_per_minute, max_audio_duration_sec, price_per_month, is_active. Валидация на фронте, inline-ошибки, блокировка кнопки «Сохранить» при невалидных полях. Отправка через `Auth.apiFetch` (POST/PUT), спиннер на кнопке. |
+| `api/v1/endpoints/admin.py` | **Доработан.** Endpoints GET/POST/PUT/DELETE `/tariffs` реализованы. Исправлена ошибка `'str' object has no attribute 'value'` при сериализации enum-полей (убран `.value` для строковых полей БД). |
+| `core/deps.py` | **Доработан.** Исправлена проверка ролей: `str(user.role)` сравнивается с `UserRole.admin.value` / `UserRole.superadmin.value` (ранее сравнивался enum со строкой). |
+| `static/js/admin_ui.js` | **Доработан.** Добавлен `escapeHtml()` для безопасного рендеринга пользовательских строк в таблицах. |
+
+**Валидация на фронте (проверена):**
+- `code` — обязательное, только `[a-z0-9_]`, длина 3-50.
+- `name` — обязательное, длина 1-255.
+- `max_requests_per_minute` — обязательное, integer ≥ 1.
+- Inline-ошибки под полями (красный текст), блокировка кнопки «Сохранить» при невалидных полях.
+
+**UX (проверено):**
+- При деактивации — `confirmDialog` с текстом: «Деактивировать тариф "Базовый"? Существующие подписки останутся активными, но новые подписки на этот тариф будут невозможны.»
+- Состояние loading на кнопке «Сохранить» (спиннер + disabled) во время запроса.
+- После сохранения модалка закрывается, таблица обновляется, показывается `UI.toast`.
+
+---
+
+### Шаг 7.3. Детали пользователя + Impersonate + детали сессии [x]
+**Цель:** Создать страницу детального просмотра пользователя с возможностью редактирования роли, блокировки, входа от его имени и просмотра сессий/подписок.
+
+| Файл | Действие |
+|------|----------|
+| `templates/admin/user_detail.html` | **Создан.** Роут `/admin/users/{user_id}`. Карточка пользователя с редактированием full_name, role, is_active. Кнопки: «Сохранить» (PUT), «Войти как пользователь» (видна только superadmin), «Заблокировать/Разблокировать». Вкладки «Сессии» (загружаются при открытии страницы) и «Подписки» (lazy-load по клику). Строки сессий кликабельны — переход на `/admin/sessions/{id}`. |
+| `templates/admin/users.html` | **Изменён.** Кликабельные строки (ссылка на `/admin/users/{id}`), поиск с debounce 300мс, фильтры по роли и статусу (табы), skeleton, empty state. |
+| `templates/admin/session_detail.html` | **Создан.** Роут `/admin/sessions/{session_id}`. Отображает метаданные сессии (тип, статус, длительность, IP, User-Agent, ошибка) и блок результата (pretty JSON) с кнопкой «Скачать JSON». |
+| `routes/admin.py` | **Доработан.** Добавлены HTML-роуты `/users/{user_id}` и `/sessions/{session_id}`. |
+| `api/v1/endpoints/admin.py` | **Доработан.** Добавлены endpoints: GET `/users/{id}/sessions`, POST `/users/{id}/impersonate` (генерация access token), GET `/sessions/{session_id}` (детали сессии), фильтр `user_id` в `/subscriptions`. Исправлена ошибка `'str' object has no attribute 'value'` в полях `session_type` и `status`. |
+
+**Отладка и доработки в процессе:**
+- Исправлена ошибка `'str' object has no attribute 'value'` в `admin_user_sessions` и `impersonate_user` (поля `session_type`, `status`, `role` в БД хранятся как строки, а не Python-Enum).
+- Исправлен цикл редиректа 401→login: `core/exception_handlers.py` теперь не редиректит, если запрос уже к `/admin/login` или `/login`.
+- Access token синхронизируется с cookie (`auth.js` пишет `access_token` в cookie при `setAccessToken`), что позволяет SSR-переходам на `/admin/*` работать без повторной авторизации.
+- Сессии на странице пользователя загружаются сразу при открытии (не по клику на вкладку), а подписки — lazy-load при первом переключении на вкладку.
+
+**UX Impersonate (проверено):**
+- При клике — `Auth.apiFetch` получает `access_token`, `Auth.setAccessToken(token)`, открывает `/dashboard` в новой вкладке.
+- Работает только для superadmin (проверка через `/api/v1/auth/me`).
+
+**UX Блокировка (проверено):**
+- `confirmDialog` с текстом: «Заблокировать пользователя {email}? Он потеряет доступ ко всем сервисам, данные сохранятся.»
+- После блокировки/разблокировки страница обновляется через `loadUser()`.
+
+
+---
+
+### Шаг 7.4. Мониторинг активных сессий (реальные данные + disconnect) [не выполняем, требуется доработка логики]
+**Цель:** Заменить заглушку `/admin/sessions` на таблицу с реальными активными WS-сессиями и возможностью принудительного отключения.
+
+| Файл | Действие |
+|------|----------|
+| `templates/admin/sessions.html` | **Изменить.** Таблица активных ASR-сессий: ID, пользователь (email или «Гость»), тип (url/file/websocket), статус (badge), длительность аудио, начало (timestamp), IP. Кнопка «Отключить WS» (только для типа websocket) — вызывает `POST /api/v1/admin/users/{uid}/sessions/{sid}/disconnect`. Автообновление таблицы каждые 10 сек через `Auth.apiFetch('/api/v1/admin/queue')` (или новый endpoint для активных сессий). |
+| `api/v1/endpoints/admin.py` | **Доработать (если заглушка).** `GET /api/v1/admin/queue` — возвращать реальный список активных сессий из `ConnectionManager` / `AudioSession` (или `InMemoryStateStore`). `POST /api/v1/admin/users/{uid}/sessions/{sid}/disconnect` — реализовать принудительное закрытие WS через `ConnectionManager.disconnect(client_id)`. |
 
 **UX:**
-- При деактивации — `confirmDialog` («Деактивировать тариф "Базовый"? Существующие подписки останутся активными»).
-- Валидация: code — уникальный, латиница + underscore.
+- **Skeleton** при первой загрузке.
+- **Empty state:** «Нет активных сессий».
+- **Автообновление:** индикатор «Последнее обновление: 10 сек назад» + кнопка «Обновить сейчас».
+- **Disconnect:** `confirmDialog` «Прервать сессию {id} пользователя {email}? Незавершённое распознавание будет потеряно.»
 
-### Шаг 7.3. Детали пользователя
-**Цель:** Страница детального просмотра и редактирования.
+
+---
+
+### Шаг 7.4.5. Режим «Эксперт» на странице ASR [x]
+**Цель:** Дать пользователю возможность тонко настраивать все параметры распознавания (из `SyncASRRequest`, `PostFileRequest` и WS-config) через единый UI, с сохранением настроек в `localStorage`.
+
+**Подзадачи:**
+
+| # | Задача | Файлы | Критерий приёмки |
+|---|--------|-------|------------------|
+| 7.4.5.1 | **Инфраструктура хранения настроек.** Создать `static/js/asr_settings.js` — модуль `ASRSettings` с единым ключом `localStorage` (`asr_expert_settings_v1`). Дефолты по `SyncASRRequest` / `PostFileRequest` / `WSConfigMessage`. API: `getFor(mode)`, `setFor(mode, values)`, `reset()`, `getDefaults(mode)`, `isDirty(mode)`. | `static/js/asr_settings.js` | Настройки сохраняются при изменении любого поля и восстанавливаются после F5. |
+| 7.4.5.2 | **UI: переключатель «Эксперт» и панель параметров.** В каждой вкладке ( `templates/user/asr.html`: URL, File, WS) добавлен toggle «Режим Эксперт» с badge-индикатором изменений. В выключенном состоянии — только базовые поля. В включённом — раскрывается полный набор параметров, сгруппированных по блокам: «Пост-обработка», «Диаризация», «Скорость речи», «Производительность» (URL/File); «Транспорт и протокол» (WS). Панель анимируется через CSS `max-height/opacity`. Добавлена кнопка «Сбросить настройки» в каждую панель. | `templates/user/asr.html` | Переключение работает без перезагрузки. Панель появляется/скрывается с анимацией. Badge показывает, что настройки отличаются от дефолтов. |
+| 7.4.5.3 | **Валидация на фронте.** Для числовых полей: `batch_size` ≥ 1, `diar_vad_sensity` 1–5, `speech_speed_correction_multiplier` > 0, `sample_rate` 8000–48000 (WS). При невалидном значении — inline-ошибка (красный текст под полем) и блокировка кнопки «Отправить». Добавлена live-валидация на событие `input`. | `static/js/asr_page.js` | Невалидные значения не дают отправить форму. Ошибка исчезает при вводе корректного значения. |
+| 7.4.5.4 | **Интеграция с API/WS.** Обновлены `sendUrl()`, `sendFile()`, `sendWs()` в `static/js/asr_page.js`: добавлены `getUrlParams()`, `getFileParams()`, `getWsParams()` — если эксперт выключен, эксперт-поля берутся из дефолтов `ASRSettings`, а не из скрытого DOM. Для URL — JSON `SyncASRRequest`. Для File — `multipart/form-data` с полным `PostFileRequest`. Для WS — `WSConfigMessage` с `audio_transport`, `wait_null_answers`, `audio_format`, `channel_name` из DOM. Синхронизированы `ws_use_base64` и `ws_audio_transport`. | `static/js/asr_page.js` | Все параметры из Pydantic-моделей передаются на бэкенд. Бэкенд принимает и валидирует их корректно. |
+| 7.4.5.5 | **Проверка бэкенда.** `api/legacy/post_by_url.py` принимает `SyncASRRequest` — все поля валидируются FastAPI. File-endpoint (`api/v1/endpoints/asr.py`) требует проверки вне текущего контекста (файл не в чате). WS-хендлер принимает `WSConfigMessage` — все поля присутствуют в модели. | `api/legacy/post_by_url.py`, `models/fast_api_models.py`, `models/ws_models.py` | Swagger / OpenAPI отображает все поля. Тестовый запрос с эксперт-параметрами возвращает корректный результат. |
+| 7.4.5.6 | **UX-полировка.** Добавлены: кнопка «Сбросить настройки» с `confirmDialog`, badge-индикатор изменённых настроек, live-валидация, анимация панели, мобильная адаптивность (fieldset grid), совместимость с `Auth.apiFetch`. | `templates/user/asr.html`, `static/js/asr_page.js` | Все критерии приёмки шага выполнены. |
+
+**Общие критерии приёмки шага 7.4.5:**
+- [x] Пользователь включает «Эксперт», меняет параметры, перезагружает страницу — настройки восстанавливаются из `localStorage`.
+- [x] В обычном (не-эксперт) режиме UI не перегружен: видны только источник аудио и базовые флаги.
+- [x] Все параметры из `SyncASRRequest`, `PostFileRequest` и `WSConfigMessage` доступны для редактирования хотя бы в одной из вкладок.
+- [x] Невалидные значения блокируют отправку с понятной inline-ошибкой.
+- [x] Бэкенд принимает и обрабатывает все эксперт-параметры корректно.
+- [x] Для работы использованы файлы: `templates/user/asr.html`, `static/js/asr_page.js`, `static/js/asr_settings.js`, `models/fast_api_models.py`, `models/ws_models.py`, `api/legacy/post_by_url.py`.
+
+---
+
+### Шаг 7.5. UX/UI полировка всех оставшихся админ-страниц
+**Цель:** Единообразие, состояния loading, обработка ошибок, фильтры, empty state на всех админ-страницах.
 
 | Файл | Действие |
 |------|----------|
-| `templates/admin/user_detail.html` | Создать. Роут `/admin/users/{id}`. Карточка пользователя: email, имя, роль (select: user/admin/superadmin), статус (toggle is_active), telegram, дата регистрации. Кнопки: «Сохранить», «Войти как пользователь» (impersonate, superadmin only), «Блокировать». Таблица сессий пользователя (последние 20, с пагинацией). Таблица подписок. |
-| `templates/admin/users.html` | Изменить. Сделать строки кликабельными (переход на `/admin/users/{id}`). |
+| `templates/admin/subscriptions.html` | **Изменить.** Добавить фильтры по статусу (active/expired/cancelled) и тарифу (select с `/api/v1/admin/tariffs`). Таблица: пользователь, тариф, статус (badge), начало, окончание, auto-renew. Кнопки «Продлить»/«Отменить» с `UI.confirmDialog`. Skeleton + empty state. |
+| `templates/admin/transactions.html` | **Изменить.** Добавить фильтр по статусу (pending/succeeded/cancelled) и дате (с/по). Таблица: ID, пользователь, сумма, валюта, статус (badge), провайдер, external_id. Skeleton + empty state. |
+| `templates/admin/logs.html` | **Изменить.** Добавить фильтры по level (info/warning/error) и component (select с уникальными компонентами). Таблица: дата, уровень (badge), компонент, сообщение (обрезать до 120 символов с «…»). Live-обновление: кнопка «▶ Live» / «⏸ Пауза», которая включает/выключает polling каждые 5 сек. Skeleton + empty state. |
+| `templates/admin/api_keys.html` | **Изменить.** Добавить поиск по email пользователя (input с debounce). Таблица: пользователь, имя ключа, статус (badge), создан, last_used_at. Кнопка «Отозвать» с `confirmDialog`. Skeleton + empty state. |
+| `templates/admin/settings.html` | **Изменить.** Maintenance mode toggle: кнопка с состояниием loading (спиннер) во время запроса, `UI.toast` при успехе/ошибке. Добавить отображение текущего статуса («Режим обслуживания: Включён / Выключен»). |
+| `templates/admin/telegram.html` | **Изменить.** Форма настройки WebApp URL (input) + кнопка «Сохранить». Кнопка «Установить webhook» (POST `/api/v1/admin/telegram/webhook`). Отображение статистики (GET `/api/v1/admin/telegram/stats`) — карточки: всего TG-пользователей, сессий через TG. Skeleton + toast. |
 
-**UX:**
-- **Impersonate:** кнопка видна только superadmin, при клике — получение токена и открытие `/dashboard` в новой вкладке от имени пользователя.
-- **Блокировка:** `confirmDialog` + soft-delete.
+**Общие правила для всех админ-страниц (чек-лист):**
+- [ ] Все кнопки, вызывающие `fetch`, имеют состояние loading (`.spinner` + `disabled`).
+- [ ] Все опасные действия (delete, cancel, block, disconnect, revoke) требуют `UI.confirmDialog` (никаких `window.confirm`).
+- [ ] Все ошибки API отображаются через `UI.toast(msg, 'error')`.
+- [ ] Все успешные действия — `UI.toast(msg, 'success')`.
+- [ ] Все таблицы имеют skeleton при загрузке и empty state при отсутствии данных.
+- [ ] Все таблицы имеют hover-эффект на строках (`tr:hover` — фон чуть светлее).
+- [ ] Фильтры и поиск используют debounce (минимум 300мс) для избежания лишних запросов.
+- [ ] Пагинация: кнопка «Загрузить ещё» (не номера страниц, как в user/history).
 
-### Шаг 7.4. Мониторинг сессий
-**Цель:** Заменить заглушку `/admin/sessions` на реальные данные.
+---
+
+### Шаг 7.6. Единообразие навигации и мобильная адаптивность админки
+**Цель:** Админ-панель должна быть юзабельна на планшете и не ломаться на узких экранах.
 
 | Файл | Действие |
 |------|----------|
-| `templates/admin/sessions.html` | Изменить. Таблица активных ASR-сессий: ID, пользователь (email), тип, статус, длительность аудио, начало. Кнопка «Отключить WS» (для websocket-сессий) — вызов `/api/v1/admin/users/{uid}/sessions/{sid}/disconnect`. Автообновление каждые 10 сек через `apiFetch`. |
+| `templates/admin/base_admin.html` | **Изменить.** Добавить «гамбургер»-кнопку для мобильных (< 768px): sidebar скрывается за кнопкой, main content занимает 100% ширины. Sidebar выезжает слева при клике. Сохранить desktop-версию (sidebar 220px фиксированно). |
 
-**Бэкенд (если нужно):**
-- Реализовать хранение активных WS-сессий в `ConnectionMeta` с возможностью их перечисления и закрытия.
+**Критерии приёмки:**
+- На экране 1024px (планшет) таблицы не выходят за границы экрана (горизонтальный скролл внутри `.card` если нужно).
+- На экране 375px (мобильный) sidebar скрыт, доступен через меню.
 
-### Шаг 7.5. UX/UI полировка всех админ-страниц
-**Цель:** Единообразие, состояния, обработка ошибок.
+---
 
-| Файл | Действие |
-|------|----------|
-| `templates/admin/users.html` | Добавить skeleton при загрузке. Поиск с debounce (300мс). Фильтры по роли/статусу (табы). Empty state. |
-| `templates/admin/subscriptions.html` | Добавить фильтры по статусу и тарифу. Кнопки «Продлить»/«Отменить» с `confirmDialog`. |
-| `templates/admin/transactions.html` | Добавить фильтр по статусу. |
-| `templates/admin/logs.html` | Добавить фильтры по level (info/warning/error) и component. Live-обновление (опционально). |
-| `templates/admin/api_keys.html` | Добавить поиск по user_id/email. |
-| `templates/admin/settings.html` | Maintenance mode toggle — добавить состояние loading на кнопку, toast при успехе. |
+**Результат Этапа 7 (ожидаемый):**
+- `templates/admin/base_admin.html` — обновлён с `design-system.css`, `admin_ui.js`, toast-контейнером, CSRF, мобильным меню.
+- `static/js/admin_ui.js` — утилиты для админки (renderBadge, renderDate, initAdmin).
+- `static/js/admin_dashboard.js` — WebSocket-клиент для real-time метрик с reconnect и алертами.
+- `templates/admin/dashboard.html` — виджеты с WS + Chart.js график истории.
+- `templates/admin/tariffs.html` + `tariff_modal.html` — полный CRUD тарифов с валидацией.
+- `templates/admin/user_detail.html` — детали пользователя с impersonate и блокировкой.
+- `templates/admin/users.html` — кликабельные строки, поиск с debounce, фильтры.
+- `templates/admin/sessions.html` — реальные активные сессии с кнопкой disconnect.
+- `templates/admin/subscriptions.html`, `transactions.html`, `logs.html`, `api_keys.html`, `settings.html`, `telegram.html` — доработаны согласно правилам UX/UI полировки.
+- `api/v1/endpoints/admin.py` — доработаны заглушки `/metrics/history`, `/queue`, `/disconnect` до реальной функциональности.
 
-**Общие правила для всех админ-страниц:**
-- Все кнопки, вызывающие `fetch`, имеют состояние loading (спиннер + disabled).
-- Все опасные действия (delete, cancel, block) требуют `confirmDialog`.
-- Все ошибки API отображаются через toast (красный).
-- Все успешные действия — toast (зелёный).
-- Таблицы: hover-эффект на строках, сортировка по клику на заголовок (если применимо).
+**Важно:** При сбросе контекста помнить, что:
+- Все новые JS-файлы должны подключаться в шаблонах после `auth.js` и `ui.js`.
+- Все `fetch` в админке должны использовать `Auth.apiFetch` (автоматический refresh при 401).
+- Все модальные окна используют нативный `<dialog>`, не bootstrap/modal.js.
+- Chart.js подключается через CDN в `base_admin.html` (уже есть).
 
 ---
 

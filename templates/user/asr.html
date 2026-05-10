@@ -31,19 +31,70 @@
         <label>Ссылка на аудио</label>
         <input type="url" id="urlInput" class="input" placeholder="https://example.com/audio.mp3">
       </div>
-      <div class="flex gap-4 mb-4" style="flex-wrap:wrap;">
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-          <input type="checkbox" id="url_keep_raw" checked> Сохранить сырые данные
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex gap-4" style="flex-wrap:wrap;">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" id="url_fast_speech"> Быстрая речь
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" id="url_split_phrases" checked> Разбить на фразы
+          </label>
+        </div>
+        <label class="flex items-center gap-2" style="cursor:pointer;">
+          <input type="checkbox" id="url_expert" onchange="toggleExpert('url')">
+          <span class="text-sm font-semibold">Эксперт</span>
+          <span id="url_expert_badge" class="badge badge-warning" style="display:none; font-size:10px; padding:2px 6px;">●</span>
         </label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-          <input type="checkbox" id="url_do_echo"> Убрать эхо
-        </label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-          <input type="checkbox" id="url_do_dialogue"> Диалог
-        </label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-          <input type="checkbox" id="url_do_punct"> Пунктуация
-        </label>
+      </div>
+      <div id="url_expert_panel" class="expert-panel">
+        <div class="card" style="background:var(--color-bg); margin-bottom:16px;">
+          <fieldset style="border:1px solid var(--color-border);border-radius:var(--radius);padding:12px;margin-bottom:12px;">
+            <legend class="text-sm font-semibold" style="padding:0 8px;">Пост-обработка</legend>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="url_keep_raw" checked> Сохранить сырые данные</label>
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="url_do_echo_clearing"> Убрать эхо</label>
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="url_do_dialogue" checked> Диалог</label>
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="url_do_punctuation" checked> Пунктуация</label>
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="url_do_diarization"> Диаризация</label>
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="url_make_mono" checked> Объединить каналы (mono)</label>
+            </div>
+          </fieldset>
+          <fieldset style="border:1px solid var(--color-border);border-radius:var(--radius);padding:12px;margin-bottom:12px;">
+            <legend class="text-sm font-semibold" style="padding:0 8px;">Диаризация</legend>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+              <div class="form-group" style="margin:0;">
+                <label class="text-sm text-muted">Чувствительность VAD (1–5)</label>
+                <input type="number" id="url_diar_vad_sensity" class="input" min="1" max="5" value="3" style="width:80px;">
+                <div class="text-sm" id="url_err_diar_vad_sensity" style="color:var(--color-danger); display:none;"></div>
+              </div>
+            </div>
+          </fieldset>
+          <fieldset style="border:1px solid var(--color-border);border-radius:var(--radius);padding:12px;margin-bottom:12px;">
+            <legend class="text-sm font-semibold" style="padding:0 8px;">Скорость речи</legend>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="url_do_auto_speech_speed_correction"> Коррекция скорости речи</label>
+              <div class="form-group" style="margin:0;">
+                <label class="text-sm text-muted">Множитель скорости</label>
+                <input type="number" id="url_speech_speed_correction_multiplier" class="input" step="0.1" min="0.1" value="1.0" style="width:80px;">
+                <div class="text-sm" id="url_err_speech_speed_correction_multiplier" style="color:var(--color-danger); display:none;"></div>
+              </div>
+            </div>
+          </fieldset>
+          <fieldset style="border:1px solid var(--color-border);border-radius:var(--radius);padding:12px;margin-bottom:12px;">
+            <legend class="text-sm font-semibold" style="padding:0 8px;">Производительность</legend>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="url_use_batch"> Пакетная обработка</label>
+              <div class="form-group" style="margin:0;">
+                <label class="text-sm text-muted">Batch size</label>
+                <input type="number" id="url_batch_size" class="input" min="1" value="8" style="width:80px;">
+                <div class="text-sm" id="url_err_batch_size" style="color:var(--color-danger); display:none;"></div>
+              </div>
+            </div>
+          </fieldset>
+          <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+            <button type="button" class="btn btn-ghost btn-sm" onclick="resetExpertMode('url')">Сбросить настройки</button>
+          </div>
+        </div>
       </div>
       <button class="btn btn-primary" id="btnUrl" onclick="sendUrl()">Отправить</button>
       <div id="urlResult" class="mt-4" style="display:none;">
@@ -70,19 +121,70 @@
         <p class="text-muted">Перетащите файл сюда или <span style="color:var(--color-primary);text-decoration:underline;">выберите</span></p>
         <input type="file" id="fileInput" style="display:none;" onchange="handleFileSelect(this.files[0])">
       </div>
-      <div class="flex gap-4 mb-4 mt-4" style="flex-wrap:wrap;">
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-          <input type="checkbox" id="file_keep_raw" checked> Сохранить сырые данные
+      <div class="flex items-center justify-between mb-4 mt-4">
+        <div class="flex gap-4" style="flex-wrap:wrap;">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" id="file_fast_speech"> Быстрая речь
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" id="file_split_phrases" checked> Разбить на фразы
+          </label>
+        </div>
+        <label class="flex items-center gap-2" style="cursor:pointer;">
+          <input type="checkbox" id="file_expert" onchange="toggleExpert('file')">
+          <span class="text-sm font-semibold">Эксперт</span>
+          <span id="file_expert_badge" class="badge badge-warning" style="display:none; font-size:10px; padding:2px 6px;">●</span>
         </label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-          <input type="checkbox" id="file_do_dialogue"> Строить диалог
-        </label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-          <input type="checkbox" id="file_do_diar"> Диаризация
-        </label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-          <input type="checkbox" id="file_do_punct"> Пунктуация
-        </label>
+      </div>
+      <div id="file_expert_panel" class="expert-panel">
+        <div class="card" style="background:var(--color-bg); margin-bottom:16px;">
+          <fieldset style="border:1px solid var(--color-border);border-radius:var(--radius);padding:12px;margin-bottom:12px;">
+            <legend class="text-sm font-semibold" style="padding:0 8px;">Пост-обработка</legend>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="file_keep_raw" checked> Сохранить сырые данные</label>
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="file_do_echo_clearing"> Убрать эхо</label>
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="file_do_dialogue" checked> Диалог</label>
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="file_do_punctuation" checked> Пунктуация</label>
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="file_do_diarization"> Диаризация</label>
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="file_make_mono" checked> Объединить каналы (mono)</label>
+            </div>
+          </fieldset>
+          <fieldset style="border:1px solid var(--color-border);border-radius:var(--radius);padding:12px;margin-bottom:12px;">
+            <legend class="text-sm font-semibold" style="padding:0 8px;">Диаризация</legend>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+              <div class="form-group" style="margin:0;">
+                <label class="text-sm text-muted">Чувствительность VAD (1–5)</label>
+                <input type="number" id="file_diar_vad_sensity" class="input" min="1" max="5" value="3" style="width:80px;">
+                <div class="text-sm" id="file_err_diar_vad_sensity" style="color:var(--color-danger); display:none;"></div>
+              </div>
+            </div>
+          </fieldset>
+          <fieldset style="border:1px solid var(--color-border);border-radius:var(--radius);padding:12px;margin-bottom:12px;">
+            <legend class="text-sm font-semibold" style="padding:0 8px;">Скорость речи</legend>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="file_do_auto_speech_speed_correction"> Коррекция скорости речи</label>
+              <div class="form-group" style="margin:0;">
+                <label class="text-sm text-muted">Множитель скорости</label>
+                <input type="number" id="file_speech_speed_correction_multiplier" class="input" step="0.1" min="0.1" value="1.0" style="width:80px;">
+                <div class="text-sm" id="file_err_speech_speed_correction_multiplier" style="color:var(--color-danger); display:none;"></div>
+              </div>
+            </div>
+          </fieldset>
+          <fieldset style="border:1px solid var(--color-border);border-radius:var(--radius);padding:12px;margin-bottom:12px;">
+            <legend class="text-sm font-semibold" style="padding:0 8px;">Производительность</legend>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="file_use_batch"> Пакетная обработка</label>
+              <div class="form-group" style="margin:0;">
+                <label class="text-sm text-muted">Batch size</label>
+                <input type="number" id="file_batch_size" class="input" min="1" value="8" style="width:80px;">
+                <div class="text-sm" id="file_err_batch_size" style="color:var(--color-danger); display:none;"></div>
+              </div>
+            </div>
+          </fieldset>
+          <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+            <button type="button" class="btn btn-ghost btn-sm" onclick="resetExpertMode('file')">Сбросить настройки</button>
+          </div>
+        </div>
       </div>
       <button class="btn btn-primary w-full" id="btnFile" onclick="sendFile()" disabled>Отправить</button>
       <div id="fileProgress" class="mt-4 text-muted text-sm" style="display:none;">Загрузка...</div>
@@ -110,15 +212,63 @@
         <label>Файл WAV (16-bit PCM)</label>
         <input type="file" id="wsFileInput" class="input" accept=".wav" onchange="onWsFileSelected()">
       </div>
-      <div class="flex gap-4 mb-4" style="flex-wrap:wrap;">
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-          <input type="checkbox" id="ws_do_dialogue"> Диалог
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex gap-4" style="flex-wrap:wrap;">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" id="ws_fast_speech"> Быстрая речь
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" id="ws_split_phrases" checked> Разбить на фразы
+          </label>
+        </div>
+        <label class="flex items-center gap-2" style="cursor:pointer;">
+          <input type="checkbox" id="ws_expert" onchange="toggleExpert('ws')">
+          <span class="text-sm font-semibold">Эксперт</span>
+          <span id="ws_expert_badge" class="badge badge-warning" style="display:none; font-size:10px; padding:2px 6px;">●</span>
         </label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-          <input type="checkbox" id="ws_do_punct"> Пунктуация
-        </label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-          <input type="checkbox" id="ws_use_base64" checked> Base64 (иначе binary)</label>
+      </div>
+      <div id="ws_expert_panel" class="expert-panel">
+        <div class="card" style="background:var(--color-bg); margin-bottom:16px;">
+          <fieldset style="border:1px solid var(--color-border);border-radius:var(--radius);padding:12px;margin-bottom:12px;">
+            <legend class="text-sm font-semibold" style="padding:0 8px;">Пост-обработка</legend>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="ws_do_dialogue" checked> Диалог</label>
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="ws_do_punctuation" checked> Пунктуация</label>
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="ws_use_base64" checked> Base64 (иначе binary)</label>
+            </div>
+          </fieldset>
+          <fieldset style="border:1px solid var(--color-border);border-radius:var(--radius);padding:12px;margin-bottom:12px;">
+            <legend class="text-sm font-semibold" style="padding:0 8px;">Транспорт и протокол</legend>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="ws_wait_null_answers" checked> Ждать null-ответы</label>
+              <div class="form-group" style="margin:0;">
+                <label class="text-sm text-muted">Транспорт аудио</label>
+                <select id="ws_audio_transport" class="input" style="width:160px;">
+                  <option value="json_base64">JSON Base64</option>
+                  <option value="binary">Binary</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin:0;">
+                <label class="text-sm text-muted">Sample rate</label>
+                <input type="number" id="ws_sample_rate" class="input" min="8000" max="48000" value="16000" style="width:100px;">
+                <div class="text-sm" id="ws_err_sample_rate" style="color:var(--color-danger); display:none;"></div>
+              </div>
+              <div class="form-group" style="margin:0;">
+                <label class="text-sm text-muted">Audio format</label>
+                <select id="ws_audio_format" class="input" style="width:120px;">
+                  <option value="pcm16">pcm16</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin:0;">
+                <label class="text-sm text-muted">Channel name</label>
+                <input type="text" id="ws_channel_name" class="input" placeholder="auto" style="width:120px;">
+              </div>
+            </div>
+          </fieldset>
+          <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+            <button type="button" class="btn btn-ghost btn-sm" onclick="resetExpertMode('ws')">Сбросить настройки</button>
+          </div>
+        </div>
       </div>
       <button class="btn btn-primary w-full" id="btnWs" onclick="sendWs()" disabled>Отправить</button>
       <div id="wsResult" class="mt-4" style="display:none;">
@@ -141,5 +291,178 @@
   </div>
 </div>
 
+<style>
+  .expert-panel {
+    overflow: hidden;
+    max-height: 0;
+    opacity: 0;
+    transition: max-height 0.35s ease, opacity 0.25s ease;
+  }
+  .expert-panel.open {
+    max-height: 2000px;
+    opacity: 1;
+  }
+</style>
+<script src="/static/js/asr_settings.js"></script>
+<script>
+  function toggleExpert(mode) {
+    const panel = document.getElementById(mode + '_expert_panel');
+    const checked = document.getElementById(mode + '_expert').checked;
+    if (checked) {
+      panel.classList.add('open');
+    } else {
+      panel.classList.remove('open');
+    }
+    ASRSettings.setFor(mode, { expert: checked });
+    updateExpertBadge(mode);
+  }
+
+  function updateExpertBadge(mode) {
+    const badge = document.getElementById(mode + '_expert_badge');
+    if (!badge) return;
+    badge.style.display = ASRSettings.isDirty(mode) ? 'inline-block' : 'none';
+  }
+
+  function restoreExpertSettings() {
+    ['url','file','ws'].forEach(mode => {
+      const s = ASRSettings.getFor(mode);
+      const toggle = document.getElementById(mode + '_expert');
+      if (toggle) toggle.checked = !!s.expert;
+      const panel = document.getElementById(mode + '_expert_panel');
+      if (panel) {
+        if (s.expert) panel.classList.add('open');
+        else panel.classList.remove('open');
+      }
+      Object.keys(s).forEach(key => {
+        const el = document.getElementById(mode + '_' + key);
+        if (!el) return;
+        if (el.type === 'checkbox') el.checked = !!s[key];
+        else if (el.tagName === 'SELECT') el.value = s[key] || '';
+        else el.value = s[key] != null ? s[key] : '';
+      });
+      updateExpertBadge(mode);
+      syncHighLevelToggles(mode);
+    });
+  }
+
+  function saveExpertInput(mode, key, value) {
+    const s = ASRSettings.getFor(mode);
+    if (typeof value === 'string' && value !== '' && !isNaN(value) && !isNaN(parseFloat(value))) {
+      if (['diar_vad_sensity','batch_size','sample_rate','num_speakers'].includes(key)) {
+        value = parseInt(value, 10);
+      } else if (['speech_speed_correction_multiplier'].includes(key)) {
+        value = parseFloat(value);
+      }
+    }
+    s[key] = value;
+    ASRSettings.setFor(mode, s);
+    updateExpertBadge(mode);
+  }
+
+  function syncHighLevelToggles(mode) {
+    const fastSpeech = document.getElementById(mode + '_fast_speech');
+    const splitPhrases = document.getElementById(mode + '_split_phrases');
+    if (fastSpeech) {
+      const autoSpeed = document.getElementById(mode + '_do_auto_speech_speed_correction');
+      const useBatch = document.getElementById(mode + '_use_batch');
+      if (autoSpeed) { autoSpeed.checked = fastSpeech.checked; }
+      if (useBatch) { useBatch.checked = !fastSpeech.checked; }
+    }
+    if (splitPhrases) {
+      const doDialogue = document.getElementById(mode + '_do_dialogue');
+      const doPunct = document.getElementById(mode + '_do_punctuation');
+      if (doDialogue) { doDialogue.checked = splitPhrases.checked; }
+      if (doPunct) { doPunct.checked = splitPhrases.checked; }
+    }
+  }
+
+  function initExpertListeners() {
+    ['url','file','ws'].forEach(mode => {
+      const panel = document.getElementById(mode + '_expert_panel');
+      if (panel) {
+        panel.querySelectorAll('input, select').forEach(input => {
+          const key = input.id.replace(mode + '_', '');
+          input.addEventListener('change', () => {
+            let val = input.type === 'checkbox' ? input.checked : input.value;
+            if (input.type === 'number') {
+              val = input.value === '' ? '' : parseFloat(input.value);
+            }
+            saveExpertInput(mode, key, val);
+          });
+          if (input.type === 'number') {
+            input.addEventListener('input', () => {
+              if (window.validateExpert) window.validateExpert(mode);
+            });
+          }
+        });
+      }
+      const baseIds = ['fast_speech', 'split_phrases'];
+      baseIds.forEach(key => {
+        const el = document.getElementById(mode + '_' + key);
+        if (el) {
+          el.addEventListener('change', () => {
+            const val = el.type === 'checkbox' ? el.checked : el.value;
+            saveExpertInput(mode, key, val);
+            if (key === 'fast_speech') {
+              const autoSpeed = document.getElementById(mode + '_do_auto_speech_speed_correction');
+              const useBatch = document.getElementById(mode + '_use_batch');
+              if (autoSpeed) { autoSpeed.checked = val; saveExpertInput(mode, 'do_auto_speech_speed_correction', val); }
+              if (useBatch) { useBatch.checked = !val; saveExpertInput(mode, 'use_batch', !val); }
+            }
+            if (key === 'split_phrases') {
+              const doDialogue = document.getElementById(mode + '_do_dialogue');
+              const doPunct = document.getElementById(mode + '_do_punctuation');
+              if (doDialogue) { doDialogue.checked = val; saveExpertInput(mode, 'do_dialogue', val); }
+              if (doPunct) { doPunct.checked = val; saveExpertInput(mode, 'do_punctuation', val); }
+            }
+          });
+        }
+      });
+
+      if (mode !== 'ws') {
+        const makeMono = document.getElementById(mode + '_make_mono');
+        const doEcho = document.getElementById(mode + '_do_echo_clearing');
+        if (makeMono && doEcho) {
+          makeMono.addEventListener('change', () => {
+            if (!makeMono.checked) {
+              doEcho.checked = true;
+              saveExpertInput(mode, 'do_echo_clearing', true);
+            }
+          });
+        }
+      }
+    });
+
+    // Синхронизация ws_use_base64 и ws_audio_transport
+    const useBase64 = document.getElementById('ws_use_base64');
+    const audioTransport = document.getElementById('ws_audio_transport');
+    if (useBase64 && audioTransport) {
+      useBase64.addEventListener('change', () => {
+        audioTransport.value = useBase64.checked ? 'json_base64' : 'binary';
+        saveExpertInput('ws', 'audio_transport', audioTransport.value);
+        saveExpertInput('ws', 'use_base64', useBase64.checked);
+      });
+      audioTransport.addEventListener('change', () => {
+        useBase64.checked = audioTransport.value === 'json_base64';
+        saveExpertInput('ws', 'use_base64', useBase64.checked);
+        saveExpertInput('ws', 'audio_transport', audioTransport.value);
+      });
+    }
+  }
+
+  window.resetExpertMode = function(mode) {
+    UI.confirmDialog('Сброс настроек', 'Все параметры режима будут сброшены к значениям по умолчанию. Продолжить?', () => {
+      ASRSettings.reset(mode);
+      restoreExpertSettings();
+      updateExpertBadge(mode);
+      UI.toast('Настройки сброшены', 'success');
+    });
+  };
+
+  document.addEventListener('DOMContentLoaded', () => {
+    restoreExpertSettings();
+    initExpertListeners();
+  });
+</script>
 <script src="/static/js/asr_page.js"></script>
 {% endblock %}
