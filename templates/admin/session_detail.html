@@ -64,10 +64,21 @@
   <div class="card">
     <div class="flex items-center justify-between" style="margin-bottom:16px;">
       <h3 style="margin:0;">Результат</h3>
-      <button class="btn btn-ghost btn-sm" onclick="downloadResult()">Скачать JSON</button>
+      <div class="flex gap-2">
+        <button class="btn btn-ghost btn-sm" onclick="copyResult()">Копировать</button>
+        <button class="btn btn-ghost btn-sm" id="btnDownload" onclick="downloadResult()">Скачать</button>
+      </div>
     </div>
-    <pre id="dResult" style="background:var(--color-bg); padding:16px; border-radius:var(--radius); overflow:auto; max-height:400px; font-size:12px; color:var(--color-text);">—</pre>
+    <div class="flex gap-2 mb-2" id="detailFormatButtons"></div>
+    <pre id="dResult" style="background:var(--color-bg); padding:16px; border-radius:var(--radius); overflow:auto; max-height:400px; font-size:12px; color:var(--color-text); white-space:pre-wrap; word-break:break-word;">—</pre>
   </div>
+
+<style>
+  .json-key { color: #93c5fd; }
+  .json-string { color: #86efac; }
+  .json-number { color: #fca5a5; }
+  .json-boolean { color: #f0abfc; }
+</style>
 </div>
 {% endblock %}
 
@@ -103,26 +114,187 @@
     document.getElementById('dUa').textContent = _session.user_agent || '—';
     document.getElementById('dError').textContent = _session.error_message || '—';
 
-    const resultEl = document.getElementById('dResult');
     if (_session.result_json) {
-      resultEl.textContent = JSON.stringify(_session.result_json, null, 2);
+      displayResultDetail(_session.result_json);
     } else {
-      resultEl.textContent = 'Нет данных';
+      document.getElementById('dResult').textContent = 'Нет данных';
     }
   }
 
+  function highlightJson(json) {
+    if (typeof json !== 'string') json = JSON.stringify(json, null, 2);
+    return json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?)/g, function(match) {
+        let cls = 'json-string';
+        if (/:$/.test(match)) { cls = 'json-key'; match = match.slice(0, -1) + '</span>:'; return '<span class="' + cls + '">' + match; }
+        return '<span class="' + cls + '">' + match + '</span>';
+      })
+      .replace(/\b(true|false|null)\b/g, '<span class="json-boolean">$1</span>')
+      .replace(/\b(\d+\.?\d*)\b/g, '<span class="json-number">$1</span>');
+  }
+
+  function extractResultData(payload) {
+    const payloads = Array.isArray(payload) ? payload : [payload];
+    let hasDialog = false;
+    let dialogText = '';
+    let textContent = '';
+    let rawJson = '';
+
+    payloads.forEach((p, idx) => {
+      const prefix = payloads.length > 1 ? `=== Канал ${idx+1} ===\n` : '';
+      const sentenced = p.sentenced_data || p.data?.sentenced_data;
+
+      if (idx > 0) {
+        if (dialogText) dialogText += '\n\n';
+        if (textContent) textContent += '\n\n';
+        if (rawJson) rawJson += '\n\n';
+      }
+
+      rawJson += prefix + JSON.stringify(p, null, 2);
+
+      if (sentenced?.full_text_only) {
+        const ft = sentenced.full_text_only;
+        textContent += prefix + (Array.isArray(ft) ? ft.join('\n') : String(ft));
+      } else {
+        textContent += prefix + (sentenced?.raw_text_sentenced_recognition || p.data?.text || p.data?.raw_data?.channel_1?.map(x => x.data?.text).join('\n') || '');
+      }
+
+      const items = sentenced?.list_of_sentenced_recognitions;
+      if (items && items.length > 0) {
+        hasDialog = true;
+        if (dialogText) dialogText += '\n\n';
+        dialogText += prefix + items.map(item => {
+          const start = item.start != null ? item.start : (item.start_time || '');
+          const speaker = item.speaker != null ? `[${item.speaker}]` : '';
+          return `${speaker} ${start} - ${item.text || ''}`.trim();
+        }).join('\n');
+      }
+
+      const diarized = p.diarized_data || p.data?.diarized_data;
+      if (diarized && Array.isArray(diarized) && diarized.length > 0) {
+        hasDialog = true;
+        if (dialogText) dialogText += '\n\n';
+        dialogText += prefix + diarized.map(item => {
+          const start = item.start != null ? item.start : (item.start_time || '');
+          const speaker = item.speaker != null ? `[${item.speaker}]` : '';
+          return `${speaker} ${start} - ${item.text || ''}`.trim();
+        }).join('\n');
+      }
+    });
+
+    return { hasDialog, dialogText, textContent, rawJson };
+  }
+
+  function displayResultDetail(payload) {
+    const data = extractResultData(payload);
+    const pre = document.getElementById('dResult');
+    if (!pre) return;
+
+    let btnContainer = document.getElementById('detailFormatButtons');
+    if (!btnContainer) {
+      const card = pre.parentElement;
+      btnContainer = document.createElement('div');
+      btnContainer.className = 'flex gap-2 mb-2';
+      btnContainer.id = 'detailFormatButtons';
+      card.insertBefore(btnContainer, pre);
+    }
+    btnContainer.innerHTML = `
+      <button class="btn btn-ghost btn-sm" id="detail_btn_dialog" onclick="switchResultFormatDetail('dialog')">DIALOG</button>
+      <button class="btn btn-ghost btn-sm" id="detail_btn_text" onclick="switchResultFormatDetail('text')">TEXT</button>
+      <button class="btn btn-ghost btn-sm" id="detail_btn_raw" onclick="switchResultFormatDetail('raw')">RAW</button>
+    `;
+
+    window._resultData = data;
+    const defaultFormat = data.hasDialog ? 'dialog' : 'text';
+    switchResultFormatDetail(defaultFormat);
+  }
+
+  function switchResultFormatDetail(format) {
+    const data = window._resultData;
+    if (!data) return;
+
+    const pre = document.getElementById('dResult');
+    const btnDialog = document.getElementById('detail_btn_dialog');
+    const btnText = document.getElementById('detail_btn_text');
+    const btnRaw = document.getElementById('detail_btn_raw');
+
+    [btnDialog, btnText, btnRaw].forEach(btn => {
+      if (btn) {
+        btn.style.opacity = '0.5';
+        btn.style.borderColor = 'transparent';
+      }
+    });
+
+    const activeBtn = { dialog: btnDialog, text: btnText, raw: btnRaw }[format];
+    if (activeBtn) {
+      activeBtn.style.opacity = '1';
+      activeBtn.style.borderColor = 'var(--color-primary)';
+    }
+
+    if (btnDialog && !data.hasDialog) {
+      btnDialog.disabled = true;
+      btnDialog.style.opacity = '0.3';
+      btnDialog.style.cursor = 'not-allowed';
+    } else if (btnDialog) {
+      btnDialog.disabled = false;
+      btnDialog.style.cursor = 'pointer';
+    }
+
+    data.currentFormat = format;
+    if (format === 'dialog') {
+      pre.textContent = data.dialogText;
+    } else if (format === 'text') {
+      pre.textContent = data.textContent;
+    } else {
+      pre.innerHTML = highlightJson(data.rawJson);
+    }
+  }
+
+  function copyResult() {
+    const data = window._resultData;
+    if (!data) { UI.toast('Нет данных для копирования', 'warning'); return; }
+    const format = data.currentFormat || 'text';
+    let text;
+    if (format === 'raw') {
+      text = data.rawJson;
+    } else {
+      text = format === 'dialog' ? data.dialogText : data.textContent;
+    }
+    navigator.clipboard.writeText(text).then(() => {
+      UI.toast('Скопировано', 'success');
+    }).catch(() => {
+      UI.toast('Не удалось скопировать', 'error');
+    });
+  }
+
   function downloadResult() {
-    if (!_session || !_session.result_json) {
+    const data = window._resultData;
+    if (!data) {
       UI.toast('Нет данных для скачивания', 'warning');
       return;
     }
-    const blob = new Blob([JSON.stringify(_session.result_json, null, 2)], {type: 'application/json'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `session_${SESSION_ID}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const btn = document.getElementById('btnDownload');
+    UI.setLoading(btn, true);
+    const format = data.currentFormat || 'text';
+    let content, filename, mime;
+    if (format === 'raw') {
+      content = data.rawJson;
+      filename = 'session_' + SESSION_ID + '.json';
+      mime = 'application/json';
+    } else {
+      content = format === 'dialog' ? data.dialogText : data.textContent;
+      filename = 'session_' + SESSION_ID + '.txt';
+      mime = 'text/plain';
+    }
+    try {
+      const blob = new Blob([content], {type: mime});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+    } finally {
+      UI.setLoading(btn, false);
+    }
   }
 
   loadSession();

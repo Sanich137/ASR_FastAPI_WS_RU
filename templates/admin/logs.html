@@ -2,30 +2,192 @@
 {% block title %}Логи{% endblock %}
 {% block content %}
 <h1>Системные логи</h1>
-<div class="card">
-    <p>Загрузка логов...</p>
-    <table id="logsTable" border="1" cellpadding="8" style="width:100%;border-collapse:collapse;">
-        <thead>
-            <tr><th>Уровень</th><th>Компонент</th><th>Сообщение</th><th>Дата</th></tr>
-        </thead>
-        <tbody></tbody>
-    </table>
+
+<div class="card mb-4">
+  <div class="flex items-center justify-between" style="margin-bottom:12px;">
+    <div class="flex gap-4" style="flex-wrap:wrap;align-items:flex-end;">
+      <div class="form-group" style="flex:1;min-width:200px;">
+        <label>Уровень</label>
+        <select id="filterLevel" class="input" onchange="applyFilters()">
+          <option value="">Все</option>
+          <option value="info">Info</option>
+          <option value="warning">Warning</option>
+          <option value="error">Error</option>
+        </select>
+      </div>
+      <div class="form-group" style="flex:1;min-width:200px;">
+        <label>Компонент</label>
+        <select id="filterComponent" class="input" onchange="applyFilters()">
+          <option value="">Все</option>
+        </select>
+      </div>
+      <button class="btn btn-ghost" onclick="resetFilters()">Сбросить</button>
+    </div>
+    <button class="btn btn-ghost btn-sm" id="btnLive" onclick="toggleLive()">▶ Live</button>
+  </div>
 </div>
+
+<div class="card">
+  <div id="logsContainer">
+    <div class="skeleton" style="height:200px;"></div>
+  </div>
+  <div id="loadMoreContainer" style="text-align:center;margin-top:16px;display:none;">
+    <button class="btn btn-ghost" id="btnLoadMore" onclick="loadMore()">Загрузить ещё</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
 <script>
-    async function loadLogs() {
-        const resp = await fetch('/api/v1/admin/logs');
-        const data = await resp.json();
-        const tbody = document.querySelector('#logsTable tbody');
-        tbody.innerHTML = data.map(l => `
-            <tr>
-                <td>${l.level}</td>
-                <td>${l.component}</td>
-                <td>${l.message}</td>
-                <td>${l.created_at || ''}</td>
-            </tr>
-        `).join('');
-        document.querySelector('.card p').style.display = 'none';
+  let logsOffset = 0;
+  const logsLimit = 50;
+  let logsFilters = { level: '', component: '' };
+  let _liveInterval = null;
+  let _isLive = false;
+
+  async function loadComponents() {
+    try {
+      const resp = await Auth.apiFetch('/api/v1/admin/logs?limit=1');
+      if (!resp.ok) return;
+      // Загружаем уникальные компоненты отдельным запросом или используем хардкод
+      const components = ['SystemMetricsCollector', 'ASR', 'Auth', 'Payment', 'WebSocket', 'Admin'];
+      const select = document.getElementById('filterComponent');
+      components.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c;
+        opt.textContent = c;
+        select.appendChild(opt);
+      });
+    } catch (e) { /* ignore */ }
+  }
+
+  async function fetchLogs(append = false) {
+    const el = document.getElementById('logsContainer');
+    const btn = document.getElementById('btnLoadMore');
+    if (!append) {
+      el.innerHTML = '<div class="skeleton" style="height:200px;"></div>';
+      logsOffset = 0;
     }
-    loadLogs();
+    if (btn) UI.setLoading(btn, true);
+
+    const params = new URLSearchParams({ limit: logsLimit, offset: logsOffset });
+    if (logsFilters.level) params.append('level', logsFilters.level);
+    if (logsFilters.component) params.append('component', logsFilters.component);
+
+    try {
+      const resp = await Auth.apiFetch('/api/v1/admin/logs?' + params.toString());
+      if (!resp.ok) throw new Error('Ошибка загрузки');
+      const data = await resp.json();
+
+      if (!append) el.innerHTML = '';
+      renderLogsTable(data, append);
+
+      if (data.length >= logsLimit) {
+        document.getElementById('loadMoreContainer').style.display = 'block';
+      } else {
+        document.getElementById('loadMoreContainer').style.display = 'none';
+      }
+      logsOffset += data.length;
+    } catch (e) {
+      if (!append) el.innerHTML = `<div class="text-muted">Не удалось загрузить логи <button class="btn btn-ghost btn-sm" onclick="fetchLogs(false)">Повторить</button></div>`;
+      UI.toast(e.message, 'error');
+    } finally {
+      if (btn) UI.setLoading(btn, false);
+    }
+  }
+
+  function renderLogsTable(items, append) {
+    const container = document.getElementById('logsContainer');
+    if (!items || items.length === 0) {
+      if (!append) {
+        container.innerHTML = `
+          <div style="text-align:center;padding:48px 24px;">
+            <div style="font-size:48px;margin-bottom:16px;">📋</div>
+            <div class="text-muted">Нет логов</div>
+          </div>
+        `;
+      }
+      return;
+    }
+
+    let table = container.querySelector('table');
+    if (!table) {
+      container.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="color:var(--color-muted);font-size:12px;text-align:left;border-bottom:1px solid var(--color-border);">
+              <th style="padding:12px 8px;">Дата</th>
+              <th style="padding:12px 8px;">Уровень</th>
+              <th style="padding:12px 8px;">Компонент</th>
+              <th style="padding:12px 8px;">Сообщение</th>
+            </tr>
+          </thead>
+          <tbody id="logsTbody"></tbody>
+        </table>
+      `;
+      table = container.querySelector('table');
+    }
+
+    const tbody = document.getElementById('logsTbody');
+    const rows = items.map(l => {
+      const msg = (l.message || '').length > 120 ? (l.message || '').slice(0, 120) + '…' : (l.message || '');
+      return `
+        <tr style="border-bottom:1px solid var(--color-border);">
+          <td style="padding:12px 8px;" class="text-sm">${AdminUI.renderDate(l.created_at)}</td>
+          <td style="padding:12px 8px;" class="text-sm">${AdminUI.renderBadge(l.level)}</td>
+          <td style="padding:12px 8px;" class="text-sm">${l.component || '-'}</td>
+          <td style="padding:12px 8px;" class="text-sm" title="${escapeHtml(l.message || '')}">${escapeHtml(msg)}</td>
+        </tr>
+      `;
+    }).join('');
+    tbody.insertAdjacentHTML('beforeend', rows);
+  }
+
+  function toggleLive() {
+    const btn = document.getElementById('btnLive');
+    if (_isLive) {
+      clearInterval(_liveInterval);
+      _liveInterval = null;
+      _isLive = false;
+      btn.textContent = '▶ Live';
+      UI.toast('Live-обновление остановлено', 'info');
+    } else {
+      _isLive = true;
+      btn.textContent = '⏸ Пауза';
+      UI.toast('Live-обновление включено', 'success');
+      fetchLogs(false);
+      _liveInterval = setInterval(() => fetchLogs(false), 5000);
+    }
+  }
+
+  let _filterTimeout = null;
+  function applyFilters() {
+    if (_filterTimeout) clearTimeout(_filterTimeout);
+    _filterTimeout = setTimeout(() => {
+      logsFilters.level = document.getElementById('filterLevel').value;
+      logsFilters.component = document.getElementById('filterComponent').value;
+      fetchLogs(false);
+    }, 300);
+  }
+
+  function resetFilters() {
+    document.getElementById('filterLevel').value = '';
+    document.getElementById('filterComponent').value = '';
+    logsFilters = { level: '', component: '' };
+    fetchLogs(false);
+  }
+
+  function loadMore() {
+    fetchLogs(true);
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  loadComponents();
+  fetchLogs(false);
 </script>
 {% endblock %}

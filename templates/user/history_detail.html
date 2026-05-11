@@ -58,11 +58,12 @@
           <div class="flex items-center justify-between" style="margin-bottom:12px;">
             <h3 style="margin:0;">Результат</h3>
             <div class="flex gap-2">
+              <button class="btn btn-ghost btn-sm" onclick="copyResultDetail()">Копировать</button>
               <button class="btn btn-ghost btn-sm" id="btnDownload" onclick="downloadResultDetail(this)">Скачать</button>
             </div>
           </div>
           <div class="flex gap-2 mb-2" id="detailFormatButtons"></div>
-          <pre id="resultPre" style="background:var(--color-bg);padding:16px;border-radius:var(--radius);overflow:auto;max-height:500px;font-size:13px;"></pre>
+          <pre id="resultPre" style="background:var(--color-bg);padding:16px;border-radius:var(--radius);overflow:auto;max-height:500px;font-size:13px;white-space:pre-wrap;word-break:break-word;"></pre>
         </div>
       `;
       window._sessionData = s;
@@ -91,6 +92,23 @@
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
+  }
+
+  function copyResultDetail() {
+    const data = window._resultData;
+    if (!data) { UI.toast('Нет данных для копирования', 'warning'); return; }
+    const format = data.currentFormat || 'text';
+    let text;
+    if (format === 'raw') {
+      text = data.rawJson;
+    } else {
+      text = format === 'dialog' ? data.dialogText : data.textContent;
+    }
+    navigator.clipboard.writeText(text).then(() => {
+      UI.toast('Скопировано', 'success');
+    }).catch(() => {
+      UI.toast('Не удалось скопировать', 'error');
+    });
   }
 
   function downloadResultDetail(btn) {

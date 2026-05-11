@@ -480,6 +480,14 @@
 - [x] Отправленный файл обрабатывается бэкендом как обычный аудиофайл, результат отображается в формате DIALOG/TEXT/RAW.
 - [x] Эксперт-настройки для микрофона сохраняются в `localStorage` и восстанавливаются при F5.
 
+**Дополнительно выполненные мероприятия (после шага 6.8):**
+
+| # | Задача | Файлы | Результат |
+|---|--------|-------|-----------|
+| 6.8.доп.1 | **Перенос текста в деталях сессии.** Добавлены `white-space:pre-wrap;word-break:break-word` для `<pre>` блока результата на страницах `/history/{id}` и `/admin/sessions/{id}`. | `templates/user/history_detail.html`, `templates/admin/session_detail.html` | Текст переносится по словам, не выходит за границы контейнера. |
+| 6.8.доп.2 | **Кнопка «Копировать» рядом с «Скачать».** На страницах деталей сессии (user и admin) добавлена кнопка «Копировать», которая копирует текущий отображаемый текст (DIALOG/TEXT/RAW) в буфер обмена с `UI.toast('Скопировано')`. | `templates/user/history_detail.html`, `templates/admin/session_detail.html` | Пользователь может быстро скопировать результат без скачивания файла. |
+| 6.8.доп.3 | **Единообразие оформления результата в админке.** Страница `/admin/sessions/{id}` приведена к единому формату с пользовательской `/history/{id}`: кнопки DIALOG/TEXT/RAW, CSS-подсветка JSON, единая кнопка «Скачать» (формат зависит от режима отображения), перенос текста. | `templates/admin/session_detail.html` | Админ видит результат в том же формате, что и пользователь. |
+
 ---
 
 ## Этап 7. Фронтенд: Админ-панель (Jinja2 + JS)
@@ -639,14 +647,17 @@
 | `templates/admin/telegram.html` | **Изменить.** Форма настройки WebApp URL (input) + кнопка «Сохранить». Кнопка «Установить webhook» (POST `/api/v1/admin/telegram/webhook`). Отображение статистики (GET `/api/v1/admin/telegram/stats`) — карточки: всего TG-пользователей, сессий через TG. Skeleton + toast. |
 
 **Общие правила для всех админ-страниц (чек-лист):**
-- [ ] Все кнопки, вызывающие `fetch`, имеют состояние loading (`.spinner` + `disabled`).
-- [ ] Все опасные действия (delete, cancel, block, disconnect, revoke) требуют `UI.confirmDialog` (никаких `window.confirm`).
-- [ ] Все ошибки API отображаются через `UI.toast(msg, 'error')`.
-- [ ] Все успешные действия — `UI.toast(msg, 'success')`.
-- [ ] Все таблицы имеют skeleton при загрузке и empty state при отсутствии данных.
-- [ ] Все таблицы имеют hover-эффект на строках (`tr:hover` — фон чуть светлее).
-- [ ] Фильтры и поиск используют debounce (минимум 300мс) для избежания лишних запросов.
-- [ ] Пагинация: кнопка «Загрузить ещё» (не номера страниц, как в user/history).
+- [x] Все кнопки, вызывающие `fetch`, имеют состояние loading (`.spinner` + `disabled`).
+- [x] Все опасные действия (delete, cancel, block, disconnect, revoke) требуют `UI.confirmDialog` (никаких `window.confirm`).
+- [x] Все ошибки API отображаются через `UI.toast(msg, 'error')`.
+- [x] Все успешные действия — `UI.toast(msg, 'success')`.
+- [x] Все таблицы имеют skeleton при загрузке и empty state при отсутствии данных.
+- [x] Все таблицы имеют hover-эффект на строках (`tr:hover` — фон чуть светлее).
+- [x] Фильтры и поиск используют debounce (минимум 300мс) для избежания лишних запросов.
+- [x] Пагинация: кнопка «Загрузить ещё» (не номера страниц, как в user/history).
+- [x] Страница деталей сессии (`session_detail.html`) поддерживает переключение DIALOG/TEXT/RAW, копирование и скачивание в едином формате с пользовательской страницей.
+
+**Результат шага 7.5:** выполнена UX/UI полировка всех оставшихся админ-страниц. Добавлены: skeleton + empty state + hover-эффект + `Auth.apiFetch` + `UI.toast` + `UI.setLoading` + `UI.confirmDialog` на страницах `sessions.html`, `subscriptions.html`, `transactions.html`, `logs.html`, `api_keys.html`, `settings.html`, `telegram.html`. Фильтры с debounce реализованы в subscriptions, transactions, logs, api_keys. Live-обновление (polling 5 сек) с кнопкой Play/Pause — в logs. Автообновление (10 сек) — в sessions. Maintenance toggle с loading и badge-статусом — в settings. Telegram-конфигурация с формой, webhook и статистикой — в telegram.
 
 ---
 

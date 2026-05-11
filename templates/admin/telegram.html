@@ -2,20 +2,97 @@
 {% block title %}Telegram{% endblock %}
 {% block content %}
 <h1>Telegram-интеграция</h1>
-<div class="card">
-    <p>Загрузка конфигурации...</p>
-    <div id="tgConfig"></div>
+
+<div class="card mb-4" style="max-width:600px;">
+  <h3 style="margin:0 0 16px;">Настройки</h3>
+  <div class="form-group">
+    <label>WebApp URL</label>
+    <input type="url" id="tgWebappUrl" class="input" placeholder="https://asr.example.com/tg">
+  </div>
+  <div class="flex gap-2 mt-4">
+    <button class="btn btn-primary" id="btnSaveConfig" onclick="saveConfig()">Сохранить</button>
+    <button class="btn btn-ghost" id="btnSetWebhook" onclick="setWebhook()">Установить webhook</button>
+  </div>
 </div>
+
+<div class="card">
+  <h3 style="margin:0 0 16px;">Статистика</h3>
+  <div id="tgStats">
+    <div class="skeleton" style="height:80px;"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
 <script>
-    async function loadConfig() {
-        const resp = await fetch('/api/v1/admin/telegram/config');
-        const data = await resp.json();
-        document.getElementById('tgConfig').innerHTML = `
-            <p>WebApp URL: ${data.webapp_url || 'не задан'}</p>
-            <p>Активен: ${data.is_active ? 'Да' : 'Нет'}</p>
-        `;
-        document.querySelector('.card p').style.display = 'none';
+  async function loadConfig() {
+    try {
+      const resp = await Auth.apiFetch('/api/v1/admin/telegram/config');
+      if (!resp.ok) throw new Error();
+      const data = await resp.json();
+      document.getElementById('tgWebappUrl').value = data.webapp_url || '';
+    } catch (e) {
+      UI.toast('Не удалось загрузить конфигурацию', 'error');
     }
-    loadConfig();
+  }
+
+  async function saveConfig() {
+    const btn = document.getElementById('btnSaveConfig');
+    UI.setLoading(btn, true);
+    try {
+      const resp = await Auth.apiFetch('/api/v1/admin/telegram/config', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ webapp_url: document.getElementById('tgWebappUrl').value.trim() })
+      });
+      if (!resp.ok) throw new Error('Ошибка сохранения');
+      UI.toast('Конфигурация сохранена', 'success');
+    } catch (e) {
+      UI.toast(e.message, 'error');
+    } finally {
+      UI.setLoading(btn, false);
+    }
+  }
+
+  async function setWebhook() {
+    const btn = document.getElementById('btnSetWebhook');
+    UI.setLoading(btn, true);
+    try {
+      const resp = await Auth.apiFetch('/api/v1/admin/telegram/webhook', {method: 'POST'});
+      if (!resp.ok) throw new Error('Ошибка');
+      const data = await resp.json();
+      UI.toast(data.detail || 'Webhook установлен', 'success');
+    } catch (e) {
+      UI.toast(e.message, 'error');
+    } finally {
+      UI.setLoading(btn, false);
+    }
+  }
+
+  async function loadStats() {
+    const el = document.getElementById('tgStats');
+    try {
+      const resp = await Auth.apiFetch('/api/v1/admin/telegram/stats');
+      if (!resp.ok) throw new Error();
+      const data = await resp.json();
+      el.innerHTML = `
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;">
+          <div class="card" style="background:var(--color-bg);">
+            <div class="text-muted text-xs">TG-пользователей</div>
+            <div style="font-size:24px;font-weight:700;">${data.total_tg_users || 0}</div>
+          </div>
+          <div class="card" style="background:var(--color-bg);">
+            <div class="text-muted text-xs">Сессий через TG</div>
+            <div style="font-size:24px;font-weight:700;">${data.total_tg_sessions || 0}</div>
+          </div>
+        </div>
+      `;
+    } catch (e) {
+      el.innerHTML = '<div class="text-muted">Нет данных</div>';
+    }
+  }
+
+  loadConfig();
+  loadStats();
 </script>
 {% endblock %}

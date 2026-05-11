@@ -2,32 +2,155 @@
 {% block title %}Транзакции{% endblock %}
 {% block content %}
 <h1>Транзакции</h1>
-<div class="card">
-    <p>Загрузка транзакций...</p>
-    <table id="txTable" border="1" cellpadding="8" style="width:100%;border-collapse:collapse;">
-        <thead>
-            <tr><th>ID</th><th>Пользователь</th><th>Сумма</th><th>Валюта</th><th>Статус</th><th>Провайдер</th></tr>
-        </thead>
-        <tbody></tbody>
-    </table>
+
+<div class="card mb-4">
+  <div class="flex gap-4" style="flex-wrap:wrap;align-items:flex-end;">
+    <div class="form-group" style="flex:1;min-width:200px;">
+      <label>Статус</label>
+      <select id="filterStatus" class="input" onchange="applyFilters()">
+        <option value="">Все</option>
+        <option value="pending">В обработке</option>
+        <option value="succeeded">Успешно</option>
+        <option value="cancelled">Отменена</option>
+      </select>
+    </div>
+    <div class="form-group" style="flex:1;min-width:200px;">
+      <label>Дата с</label>
+      <input type="date" id="filterDateFrom" class="input" onchange="applyFilters()">
+    </div>
+    <div class="form-group" style="flex:1;min-width:200px;">
+      <label>Дата по</label>
+      <input type="date" id="filterDateTo" class="input" onchange="applyFilters()">
+    </div>
+    <button class="btn btn-ghost" onclick="resetFilters()">Сбросить</button>
+  </div>
 </div>
+
+<div class="card">
+  <div id="txContainer">
+    <div class="skeleton" style="height:200px;"></div>
+  </div>
+  <div id="loadMoreContainer" style="text-align:center;margin-top:16px;display:none;">
+    <button class="btn btn-ghost" id="btnLoadMore" onclick="loadMore()">Загрузить ещё</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
 <script>
-    async function loadTx() {
-        const resp = await fetch('/api/v1/admin/transactions');
-        const data = await resp.json();
-        const tbody = document.querySelector('#txTable tbody');
-        tbody.innerHTML = data.map(t => `
-            <tr>
-                <td>${t.id}</td>
-                <td>${t.user_id}</td>
-                <td>${t.amount || '-'}</td>
-                <td>${t.currency}</td>
-                <td>${t.status}</td>
-                <td>${t.payment_provider}</td>
-            </tr>
-        `).join('');
-        document.querySelector('.card p').style.display = 'none';
+  let txOffset = 0;
+  const txLimit = 20;
+  let txFilters = { status: '', date_from: '', date_to: '' };
+
+  async function fetchTx(append = false) {
+    const el = document.getElementById('txContainer');
+    const btn = document.getElementById('btnLoadMore');
+    if (!append) {
+      el.innerHTML = '<div class="skeleton" style="height:200px;"></div>';
+      txOffset = 0;
     }
-    loadTx();
+    if (btn) UI.setLoading(btn, true);
+
+    const params = new URLSearchParams({ limit: txLimit, offset: txOffset });
+    if (txFilters.status) params.append('status', txFilters.status);
+    if (txFilters.date_from) params.append('date_from', txFilters.date_from);
+    if (txFilters.date_to) params.append('date_to', txFilters.date_to);
+
+    try {
+      const resp = await Auth.apiFetch('/api/v1/admin/transactions?' + params.toString());
+      if (!resp.ok) throw new Error('Ошибка загрузки');
+      const data = await resp.json();
+
+      if (!append) el.innerHTML = '';
+      renderTxTable(data, append);
+
+      if (data.length >= txLimit) {
+        document.getElementById('loadMoreContainer').style.display = 'block';
+      } else {
+        document.getElementById('loadMoreContainer').style.display = 'none';
+      }
+      txOffset += data.length;
+    } catch (e) {
+      if (!append) el.innerHTML = `<div class="text-muted">Не удалось загрузить транзакции <button class="btn btn-ghost btn-sm" onclick="fetchTx(false)">Повторить</button></div>`;
+      UI.toast(e.message, 'error');
+    } finally {
+      if (btn) UI.setLoading(btn, false);
+    }
+  }
+
+  function renderTxTable(items, append) {
+    const container = document.getElementById('txContainer');
+    if (!items || items.length === 0) {
+      if (!append) {
+        container.innerHTML = `
+          <div style="text-align:center;padding:48px 24px;">
+            <div style="font-size:48px;margin-bottom:16px;">💳</div>
+            <div class="text-muted">Нет транзакций</div>
+          </div>
+        `;
+      }
+      return;
+    }
+
+    let table = container.querySelector('table');
+    if (!table) {
+      container.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="color:var(--color-muted);font-size:12px;text-align:left;border-bottom:1px solid var(--color-border);">
+              <th style="padding:12px 8px;">ID</th>
+              <th style="padding:12px 8px;">Пользователь</th>
+              <th style="padding:12px 8px;">Сумма</th>
+              <th style="padding:12px 8px;">Валюта</th>
+              <th style="padding:12px 8px;">Статус</th>
+              <th style="padding:12px 8px;">Провайдер</th>
+              <th style="padding:12px 8px;">External ID</th>
+            </tr>
+          </thead>
+          <tbody id="txTbody"></tbody>
+        </table>
+      `;
+      table = container.querySelector('table');
+    }
+
+    const tbody = document.getElementById('txTbody');
+    const rows = items.map(t => `
+      <tr style="border-bottom:1px solid var(--color-border);">
+        <td style="padding:12px 8px;" class="text-sm font-mono">${t.id}</td>
+        <td style="padding:12px 8px;" class="text-sm">${t.user_email || t.user_id || '—'}</td>
+        <td style="padding:12px 8px;" class="text-sm">${t.amount != null ? t.amount : '-'}</td>
+        <td style="padding:12px 8px;" class="text-sm">${t.currency || 'RUB'}</td>
+        <td style="padding:12px 8px;" class="text-sm">${AdminUI.renderBadge(t.status)}</td>
+        <td style="padding:12px 8px;" class="text-sm">${t.payment_provider || '-'}</td>
+        <td style="padding:12px 8px;" class="text-sm font-mono">${t.external_payment_id || '-'}</td>
+      </tr>
+    `).join('');
+    tbody.insertAdjacentHTML('beforeend', rows);
+  }
+
+  let _filterTimeout = null;
+  function applyFilters() {
+    if (_filterTimeout) clearTimeout(_filterTimeout);
+    _filterTimeout = setTimeout(() => {
+      txFilters.status = document.getElementById('filterStatus').value;
+      txFilters.date_from = document.getElementById('filterDateFrom').value;
+      txFilters.date_to = document.getElementById('filterDateTo').value;
+      fetchTx(false);
+    }, 300);
+  }
+
+  function resetFilters() {
+    document.getElementById('filterStatus').value = '';
+    document.getElementById('filterDateFrom').value = '';
+    document.getElementById('filterDateTo').value = '';
+    txFilters = { status: '', date_from: '', date_to: '' };
+    fetchTx(false);
+  }
+
+  function loadMore() {
+    fetchTx(true);
+  }
+
+  fetchTx(false);
 </script>
 {% endblock %}

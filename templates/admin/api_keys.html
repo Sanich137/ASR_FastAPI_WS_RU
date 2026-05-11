@@ -2,31 +2,152 @@
 {% block title %}API-ключи{% endblock %}
 {% block content %}
 <h1>API-ключи</h1>
-<div class="card">
-    <p>Загрузка ключей...</p>
-    <table id="keysTable" border="1" cellpadding="8" style="width:100%;border-collapse:collapse;">
-        <thead>
-            <tr><th>ID</th><th>Пользователь</th><th>Название</th><th>Активен</th><th>Действия</th></tr>
-        </thead>
-        <tbody></tbody>
-    </table>
+
+<div class="card mb-4">
+  <div class="flex gap-4" style="flex-wrap:wrap;align-items:flex-end;">
+    <div class="form-group" style="flex:1;min-width:200px;">
+      <label>Поиск по email</label>
+      <input type="text" id="filterSearch" class="input" placeholder="Email пользователя..." oninput="debounceSearch()">
+    </div>
+    <button class="btn btn-ghost" onclick="resetFilters()">Сбросить</button>
+  </div>
 </div>
+
+<div class="card">
+  <div id="keysContainer">
+    <div class="skeleton" style="height:200px;"></div>
+  </div>
+  <div id="loadMoreContainer" style="text-align:center;margin-top:16px;display:none;">
+    <button class="btn btn-ghost" id="btnLoadMore" onclick="loadMore()">Загрузить ещё</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
 <script>
-    async function loadKeys() {
-        const resp = await fetch('/api/v1/admin/api-keys');
-        const data = await resp.json();
-        const tbody = document.querySelector('#keysTable tbody');
-        tbody.innerHTML = data.map(k => `
-            <tr>
-                <td>${k.id}</td>
-                <td>${k.user_id}</td>
-                <td>${k.name}</td>
-                <td>${k.is_active ? 'Да' : 'Нет'}</td>
-                <td><button onclick="alert('Заглушка отзыва')">Отозвать</button></td>
-            </tr>
-        `).join('');
-        document.querySelector('.card p').style.display = 'none';
+  let keysOffset = 0;
+  const keysLimit = 20;
+  let keysFilters = { search: '' };
+
+  async function fetchKeys(append = false) {
+    const el = document.getElementById('keysContainer');
+    const btn = document.getElementById('btnLoadMore');
+    if (!append) {
+      el.innerHTML = '<div class="skeleton" style="height:200px;"></div>';
+      keysOffset = 0;
     }
-    loadKeys();
+    if (btn) UI.setLoading(btn, true);
+
+    const params = new URLSearchParams({ limit: keysLimit, offset: keysOffset });
+    if (keysFilters.search) params.append('search', keysFilters.search);
+
+    try {
+      const resp = await Auth.apiFetch('/api/v1/admin/api-keys?' + params.toString());
+      if (!resp.ok) throw new Error('Ошибка загрузки');
+      const data = await resp.json();
+
+      if (!append) el.innerHTML = '';
+      renderKeysTable(data, append);
+
+      if (data.length >= keysLimit) {
+        document.getElementById('loadMoreContainer').style.display = 'block';
+      } else {
+        document.getElementById('loadMoreContainer').style.display = 'none';
+      }
+      keysOffset += data.length;
+    } catch (e) {
+      if (!append) el.innerHTML = `<div class="text-muted">Не удалось загрузить ключи <button class="btn btn-ghost btn-sm" onclick="fetchKeys(false)">Повторить</button></div>`;
+      UI.toast(e.message, 'error');
+    } finally {
+      if (btn) UI.setLoading(btn, false);
+    }
+  }
+
+  function renderKeysTable(items, append) {
+    const container = document.getElementById('keysContainer');
+    if (!items || items.length === 0) {
+      if (!append) {
+        container.innerHTML = `
+          <div style="text-align:center;padding:48px 24px;">
+            <div style="font-size:48px;margin-bottom:16px;">🔑</div>
+            <div class="text-muted">Нет API-ключей</div>
+          </div>
+        `;
+      }
+      return;
+    }
+
+    let table = container.querySelector('table');
+    if (!table) {
+      container.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="color:var(--color-muted);font-size:12px;text-align:left;border-bottom:1px solid var(--color-border);">
+              <th style="padding:12px 8px;">Пользователь</th>
+              <th style="padding:12px 8px;">Название</th>
+              <th style="padding:12px 8px;">Статус</th>
+              <th style="padding:12px 8px;">Создан</th>
+              <th style="padding:12px 8px;">Последнее использование</th>
+              <th style="padding:12px 8px;"></th>
+            </tr>
+          </thead>
+          <tbody id="keysTbody"></tbody>
+        </table>
+      `;
+      table = container.querySelector('table');
+    }
+
+    const tbody = document.getElementById('keysTbody');
+    const rows = items.map(k => `
+      <tr style="border-bottom:1px solid var(--color-border);">
+        <td style="padding:12px 8px;" class="text-sm">${k.user_email || k.user_id || '—'}</td>
+        <td style="padding:12px 8px;" class="text-sm">${k.name || '—'}</td>
+        <td style="padding:12px 8px;" class="text-sm">${AdminUI.renderBadge(k.is_active ? 'active' : 'revoked')}</td>
+        <td style="padding:12px 8px;" class="text-sm">${AdminUI.renderDate(k.created_at)}</td>
+        <td style="padding:12px 8px;" class="text-sm">${k.last_used_at ? AdminUI.renderDate(k.last_used_at) : '—'}</td>
+        <td style="padding:12px 8px;" class="text-sm">
+          ${k.is_active ? `<button class="btn btn-danger btn-sm" onclick="revokeKey('${k.id}', this)">Отозвать</button>` : ''}
+        </td>
+      </tr>
+    `).join('');
+    tbody.insertAdjacentHTML('beforeend', rows);
+  }
+
+  function revokeKey(id, btn) {
+    UI.confirmDialog('Отозвать ключ?', 'Программный доступ будет немедленно заблокирован.', async () => {
+      UI.setLoading(btn, true);
+      try {
+        const resp = await Auth.apiFetch(`/api/v1/admin/api-keys/${id}`, {method: 'DELETE'});
+        if (!resp.ok) throw new Error('Ошибка');
+        UI.toast('Ключ отозван', 'success');
+        fetchKeys(false);
+      } catch (e) {
+        UI.toast(e.message, 'error');
+      } finally {
+        UI.setLoading(btn, false);
+      }
+    });
+  }
+
+  let _filterTimeout = null;
+  function debounceSearch() {
+    if (_filterTimeout) clearTimeout(_filterTimeout);
+    _filterTimeout = setTimeout(() => {
+      keysFilters.search = document.getElementById('filterSearch').value.trim();
+      fetchKeys(false);
+    }, 300);
+  }
+
+  function resetFilters() {
+    document.getElementById('filterSearch').value = '';
+    keysFilters = { search: '' };
+    fetchKeys(false);
+  }
+
+  function loadMore() {
+    fetchKeys(true);
+  }
+
+  fetchKeys(false);
 </script>
 {% endblock %}

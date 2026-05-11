@@ -2,7 +2,101 @@
 {% block title %}Сессии{% endblock %}
 {% block content %}
 <h1>Активные сессии</h1>
-<div class="card">
-    <p>Мониторинг ASR-сессий — заглушка.</p>
+
+<div class="card mb-4">
+  <div class="flex items-center justify-between" style="margin-bottom:12px;">
+    <div class="text-muted text-sm" id="lastUpdated">Последнее обновление: —</div>
+    <button class="btn btn-ghost btn-sm" id="btnRefresh" onclick="loadSessions()">🔄 Обновить</button>
+  </div>
+  <div id="sessionsContainer">
+    <div class="skeleton" style="height:200px;"></div>
+  </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let _sessionsInterval = null;
+
+  async function loadSessions() {
+    const el = document.getElementById('sessionsContainer');
+    const btn = document.getElementById('btnRefresh');
+    UI.setLoading(btn, true);
+    try {
+      const resp = await Auth.apiFetch('/api/v1/admin/queue');
+      if (!resp.ok) throw new Error('Ошибка загрузки');
+      const raw = await resp.json();
+      const data = Array.isArray(raw) ? raw : (raw.items || raw.results || []);
+
+      if (!data || data.length === 0) {
+        el.innerHTML = `
+          <div style="text-align:center;padding:48px 24px;">
+            <div style="font-size:48px;margin-bottom:16px;">📋</div>
+            <div class="text-muted">Нет активных сессий</div>
+          </div>
+        `;
+      } else {
+        el.innerHTML = `
+          <table style="width:100%;border-collapse:collapse;">
+            <thead>
+              <tr style="color:var(--color-muted);font-size:12px;text-align:left;border-bottom:1px solid var(--color-border);">
+                <th style="padding:12px 8px;">ID</th>
+                <th style="padding:12px 8px;">Пользователь</th>
+                <th style="padding:12px 8px;">Тип</th>
+                <th style="padding:12px 8px;">Статус</th>
+                <th style="padding:12px 8px;">Длительность</th>
+                <th style="padding:12px 8px;">Начало</th>
+                <th style="padding:12px 8px;">IP</th>
+                <th style="padding:12px 8px;"></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${data.map(s => `
+                <tr style="border-bottom:1px solid var(--color-border);">
+                  <td style="padding:12px 8px;" class="text-sm font-mono">${s.id}</td>
+                  <td style="padding:12px 8px;" class="text-sm">${s.user_email || s.user_id || 'Гость'}</td>
+                  <td style="padding:12px 8px;" class="text-sm">${s.session_type}</td>
+                  <td style="padding:12px 8px;" class="text-sm">${AdminUI.renderBadge(s.status)}</td>
+                  <td style="padding:12px 8px;" class="text-sm">${s.audio_duration_sec ? AdminUI.renderDuration(s.audio_duration_sec) : '-'}</td>
+                  <td style="padding:12px 8px;" class="text-sm">${AdminUI.renderDate(s.created_at)}</td>
+                  <td style="padding:12px 8px;" class="text-sm">${s.request_ip || '-'}</td>
+                  <td style="padding:12px 8px;" class="text-sm">
+                    ${s.session_type === 'websocket' ? `<button class="btn btn-danger btn-sm" onclick="disconnectSession('${s.user_id || ''}', '${s.id}')">Отключить</button>` : ''}
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+      }
+      document.getElementById('lastUpdated').textContent = 'Последнее обновление: ' + new Date().toLocaleTimeString('ru-RU');
+    } catch (e) {
+      el.innerHTML = `<div class="text-muted">Не удалось загрузить сессии <button class="btn btn-ghost btn-sm" onclick="loadSessions()">Повторить</button></div>`;
+      UI.toast(e.message, 'error');
+    } finally {
+      UI.setLoading(btn, false);
+    }
+  }
+
+  function disconnectSession(userId, sessionId) {
+    UI.confirmDialog('Прервать сессию?', `Прервать сессию ${sessionId}? Незавершённое распознавание будет потеряно.`, async () => {
+      try {
+        const resp = await Auth.apiFetch(`/api/v1/admin/users/${userId}/sessions/${sessionId}/disconnect`, {method: 'POST'});
+        if (!resp.ok) throw new Error('Ошибка');
+        UI.toast('Сессия прервана', 'success');
+        loadSessions();
+      } catch (e) {
+        UI.toast(e.message, 'error');
+      }
+    });
+  }
+
+  function startAutoRefresh() {
+    if (_sessionsInterval) clearInterval(_sessionsInterval);
+    _sessionsInterval = setInterval(loadSessions, 10000);
+  }
+
+  loadSessions();
+  startAutoRefresh();
+</script>
 {% endblock %}

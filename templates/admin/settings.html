@@ -2,20 +2,60 @@
 {% block title %}Настройки{% endblock %}
 {% block content %}
 <h1>Настройки системы</h1>
-<div class="card">
-    <h3>Режим обслуживания</h3>
-    <button onclick="toggleMaintenance()">Переключить</button>
-    <p id="maintStatus">Статус: неизвестно</p>
+
+<div class="card" style="max-width:480px;">
+  <h3 style="margin:0 0 16px;">Режим обслуживания</h3>
+  <p class="text-muted text-sm" style="margin-bottom:16px;">При включении режима обслуживания новые ASR-запросы будут отклонены с кодом 503.</p>
+  <div class="flex items-center gap-4">
+    <button class="btn btn-primary" id="btnToggleMaint" onclick="toggleMaintenance()">Переключить</button>
+    <span id="maintStatus" class="text-sm">Загрузка...</span>
+  </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
 <script>
-    async function toggleMaintenance() {
-        const resp = await fetch('/api/v1/admin/maintenance', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({enabled: true})
-        });
-        const data = await resp.json();
-        document.getElementById('maintStatus').textContent = data.detail;
+  async function loadStatus() {
+    try {
+      const resp = await Auth.apiFetch('/api/v1/admin/maintenance');
+      if (!resp.ok) throw new Error();
+      const data = await resp.json();
+      updateStatus(data.enabled);
+    } catch (e) {
+      document.getElementById('maintStatus').textContent = 'Не удалось загрузить статус';
+      UI.toast('Ошибка загрузки статуса', 'error');
     }
+  }
+
+  function updateStatus(enabled) {
+    const el = document.getElementById('maintStatus');
+    if (enabled) {
+      el.innerHTML = '<span class="badge badge-warning">Включён</span>';
+    } else {
+      el.innerHTML = '<span class="badge badge-success">Выключен</span>';
+    }
+  }
+
+  async function toggleMaintenance() {
+    const btn = document.getElementById('btnToggleMaint');
+    UI.setLoading(btn, true);
+    try {
+      const resp = await Auth.apiFetch('/api/v1/admin/maintenance', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({})
+      });
+      if (!resp.ok) throw new Error('Ошибка');
+      const data = await resp.json();
+      updateStatus(data.enabled);
+      UI.toast(data.enabled ? 'Режим обслуживания включён' : 'Режим обслуживания выключен', 'success');
+    } catch (e) {
+      UI.toast(e.message, 'error');
+    } finally {
+      UI.setLoading(btn, false);
+    }
+  }
+
+  loadStatus();
 </script>
 {% endblock %}

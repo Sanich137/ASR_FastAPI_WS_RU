@@ -2,31 +2,201 @@
 {% block title %}Подписки{% endblock %}
 {% block content %}
 <h1>Подписки</h1>
-<div class="card">
-    <p>Загрузка подписок...</p>
-    <table id="subsTable" border="1" cellpadding="8" style="width:100%;border-collapse:collapse;">
-        <thead>
-            <tr><th>ID</th><th>Пользователь</th><th>План</th><th>Статус</th><th>Действия</th></tr>
-        </thead>
-        <tbody></tbody>
-    </table>
+
+<div class="card mb-4">
+  <div class="flex gap-4" style="flex-wrap:wrap;align-items:flex-end;">
+    <div class="form-group" style="flex:1;min-width:200px;">
+      <label>Статус</label>
+      <select id="filterStatus" class="input" onchange="applyFilters()">
+        <option value="">Все</option>
+        <option value="active">Активна</option>
+        <option value="expired">Истекла</option>
+        <option value="cancelled">Отменена</option>
+      </select>
+    </div>
+    <div class="form-group" style="flex:1;min-width:200px;">
+      <label>Тариф</label>
+      <select id="filterPlan" class="input" onchange="applyFilters()">
+        <option value="">Все</option>
+      </select>
+    </div>
+    <button class="btn btn-ghost" onclick="resetFilters()">Сбросить</button>
+  </div>
 </div>
+
+<div class="card">
+  <div id="subsContainer">
+    <div class="skeleton" style="height:200px;"></div>
+  </div>
+  <div id="loadMoreContainer" style="text-align:center;margin-top:16px;display:none;">
+    <button class="btn btn-ghost" id="btnLoadMore" onclick="loadMore()">Загрузить ещё</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
 <script>
-    async function loadSubs() {
-        const resp = await fetch('/api/v1/admin/subscriptions');
-        const data = await resp.json();
-        const tbody = document.querySelector('#subsTable tbody');
-        tbody.innerHTML = data.map(s => `
-            <tr>
-                <td>${s.id}</td>
-                <td>${s.user_id}</td>
-                <td>${s.plan_id}</td>
-                <td>${s.status}</td>
-                <td><button onclick="alert('Заглушка продления')">Продлить</button></td>
-            </tr>
-        `).join('');
-        document.querySelector('.card p').style.display = 'none';
+  let subsOffset = 0;
+  const subsLimit = 20;
+  let subsFilters = { status: '', plan: '' };
+
+  async function loadPlans() {
+    try {
+      const resp = await Auth.apiFetch('/api/v1/admin/tariffs');
+      if (!resp.ok) return;
+      const plans = await resp.json();
+      const select = document.getElementById('filterPlan');
+      plans.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = p.name;
+        select.appendChild(opt);
+      });
+    } catch (e) { /* ignore */ }
+  }
+
+  async function fetchSubs(append = false) {
+    const el = document.getElementById('subsContainer');
+    const btn = document.getElementById('btnLoadMore');
+    if (!append) {
+      el.innerHTML = '<div class="skeleton" style="height:200px;"></div>';
+      subsOffset = 0;
     }
-    loadSubs();
+    if (btn) UI.setLoading(btn, true);
+
+    const params = new URLSearchParams({ limit: subsLimit, offset: subsOffset });
+    if (subsFilters.status) params.append('status', subsFilters.status);
+    if (subsFilters.plan) params.append('plan_id', subsFilters.plan);
+
+    try {
+      const resp = await Auth.apiFetch('/api/v1/admin/subscriptions?' + params.toString());
+      if (!resp.ok) throw new Error('Ошибка загрузки');
+      const data = await resp.json();
+
+      if (!append) el.innerHTML = '';
+      renderSubsTable(data, append);
+
+      if (data.length >= subsLimit) {
+        document.getElementById('loadMoreContainer').style.display = 'block';
+      } else {
+        document.getElementById('loadMoreContainer').style.display = 'none';
+      }
+      subsOffset += data.length;
+    } catch (e) {
+      if (!append) el.innerHTML = `<div class="text-muted">Не удалось загрузить подписки <button class="btn btn-ghost btn-sm" onclick="fetchSubs(false)">Повторить</button></div>`;
+      UI.toast(e.message, 'error');
+    } finally {
+      if (btn) UI.setLoading(btn, false);
+    }
+  }
+
+  function renderSubsTable(items, append) {
+    const container = document.getElementById('subsContainer');
+    if (!items || items.length === 0) {
+      if (!append) {
+        container.innerHTML = `
+          <div style="text-align:center;padding:48px 24px;">
+            <div style="font-size:48px;margin-bottom:16px;">📋</div>
+            <div class="text-muted">Нет подписок</div>
+          </div>
+        `;
+      }
+      return;
+    }
+
+    let table = container.querySelector('table');
+    if (!table) {
+      container.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="color:var(--color-muted);font-size:12px;text-align:left;border-bottom:1px solid var(--color-border);">
+              <th style="padding:12px 8px;">Пользователь</th>
+              <th style="padding:12px 8px;">Тариф</th>
+              <th style="padding:12px 8px;">Статус</th>
+              <th style="padding:12px 8px;">Начало</th>
+              <th style="padding:12px 8px;">Окончание</th>
+              <th style="padding:12px 8px;">Авто-продление</th>
+              <th style="padding:12px 8px;"></th>
+            </tr>
+          </thead>
+          <tbody id="subsTbody"></tbody>
+        </table>
+      `;
+      table = container.querySelector('table');
+    }
+
+    const tbody = document.getElementById('subsTbody');
+    const rows = items.map(s => `
+      <tr style="border-bottom:1px solid var(--color-border);">
+        <td style="padding:12px 8px;" class="text-sm">${s.user_email || s.user_id || '—'}</td>
+        <td style="padding:12px 8px;" class="text-sm">${s.plan_name || s.plan_id || '—'}</td>
+        <td style="padding:12px 8px;" class="text-sm">${AdminUI.renderBadge(s.status)}</td>
+        <td style="padding:12px 8px;" class="text-sm">${AdminUI.renderDate(s.started_at)}</td>
+        <td style="padding:12px 8px;" class="text-sm">${AdminUI.renderDate(s.expires_at)}</td>
+        <td style="padding:12px 8px;" class="text-sm">${s.auto_renew ? 'Включено' : 'Отключено'}</td>
+        <td style="padding:12px 8px;" class="text-sm">
+          <button class="btn btn-ghost btn-sm" onclick="extendSub('${s.id}', this)">Продлить</button>
+          <button class="btn btn-danger btn-sm" onclick="cancelSub('${s.id}', this)">Отменить</button>
+        </td>
+      </tr>
+    `).join('');
+    tbody.insertAdjacentHTML('beforeend', rows);
+  }
+
+  function extendSub(id, btn) {
+    UI.confirmDialog('Продлить подписку?', 'Подписка будет продлена на 30 дней.', async () => {
+      UI.setLoading(btn, true);
+      try {
+        const resp = await Auth.apiFetch(`/api/v1/admin/subscriptions/${id}/extend`, {method: 'POST'});
+        if (!resp.ok) throw new Error('Ошибка');
+        UI.toast('Подписка продлена', 'success');
+        fetchSubs(false);
+      } catch (e) {
+        UI.toast(e.message, 'error');
+      } finally {
+        UI.setLoading(btn, false);
+      }
+    });
+  }
+
+  function cancelSub(id, btn) {
+    UI.confirmDialog('Отменить подписку?', 'Подписка будет отменена. Пользователь потеряет доступ.', async () => {
+      UI.setLoading(btn, true);
+      try {
+        const resp = await Auth.apiFetch(`/api/v1/admin/subscriptions/${id}/cancel`, {method: 'POST'});
+        if (!resp.ok) throw new Error('Ошибка');
+        UI.toast('Подписка отменена', 'success');
+        fetchSubs(false);
+      } catch (e) {
+        UI.toast(e.message, 'error');
+      } finally {
+        UI.setLoading(btn, false);
+      }
+    });
+  }
+
+  let _filterTimeout = null;
+  function applyFilters() {
+    if (_filterTimeout) clearTimeout(_filterTimeout);
+    _filterTimeout = setTimeout(() => {
+      subsFilters.status = document.getElementById('filterStatus').value;
+      subsFilters.plan = document.getElementById('filterPlan').value;
+      fetchSubs(false);
+    }, 300);
+  }
+
+  function resetFilters() {
+    document.getElementById('filterStatus').value = '';
+    document.getElementById('filterPlan').value = '';
+    subsFilters = { status: '', plan: '' };
+    fetchSubs(false);
+  }
+
+  function loadMore() {
+    fetchSubs(true);
+  }
+
+  loadPlans();
+  fetchSubs(false);
 </script>
 {% endblock %}
