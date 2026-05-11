@@ -104,6 +104,7 @@
       <button class="btn btn-primary" id="btnUrl" onclick="sendUrl()">Отправить</button>
       <div id="urlResult" class="mt-4" style="display:none;">
         <div class="card" style="background:var(--color-bg);">
+          <div class="flex gap-2 mb-2" id="urlFormatButtons"></div>
           <pre id="urlResultText" style="white-space:pre-wrap;word-break:break-word;"></pre>
           <div class="flex gap-2 mt-4">
             <button class="btn btn-ghost btn-sm" onclick="copyText('urlResultText', this)">Копировать</button>
@@ -200,6 +201,7 @@
       <div id="fileProgress" class="mt-4 text-muted text-sm" style="display:none;">Загрузка...</div>
       <div id="fileResult" class="mt-4" style="display:none;">
         <div class="card" style="background:var(--color-bg);">
+          <div class="flex gap-2 mb-2" id="fileFormatButtons"></div>
           <pre id="fileResultText" style="white-space:pre-wrap;word-break:break-word;"></pre>
           <div class="flex gap-2 mt-4">
             <button class="btn btn-ghost btn-sm" onclick="copyText('fileResultText', this)">Копировать</button>
@@ -284,6 +286,7 @@
       <div id="wsResult" class="mt-4" style="display:none;">
         <div class="card" style="background:var(--color-bg);">
           <div id="wsPartial" class="text-muted text-sm mb-2"></div>
+          <div class="flex gap-2 mb-2" id="wsFormatButtons"></div>
           <pre id="wsResultText" style="white-space:pre-wrap;word-break:break-word;"></pre>
           <div class="flex gap-2 mt-4">
             <button class="btn btn-ghost btn-sm" onclick="copyText('wsResultText', this)">Копировать</button>
@@ -327,6 +330,10 @@
   }
   #asrHistory tbody tr { cursor: pointer; }
   #asrHistory tbody tr:hover { background: rgba(59,130,246,.08); }
+  .json-key { color: #93c5fd; }
+  .json-string { color: #86efac; }
+  .json-number { color: #fca5a5; }
+  .json-boolean { color: #f0abfc; }
 </style>
 <script src="/static/js/asr_settings.js"></script>
 <script>

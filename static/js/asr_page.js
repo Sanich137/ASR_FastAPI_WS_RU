@@ -1,20 +1,145 @@
 (function() {
   'use strict';
 
-  function renderAsrResult(payload, mode) {
-    const settings = ASRSettings.getFor(mode);
-    const sentenced = payload.sentenced_data || payload.data?.sentenced_data;
-    if (settings.split_phrases && sentenced?.list_of_sentenced_recognitions) {
-      return sentenced.list_of_sentenced_recognitions.map(item => {
-        const start = item.start != null ? item.start : (item.start_time || '');
-        return `${start} - ${item.text || ''}`;
-      }).join('\n');
+  let wsChannelResults = [];
+
+  function extractResultData(payload) {
+    const payloads = Array.isArray(payload) ? payload : [payload];
+    let hasDialog = false;
+    let dialogText = '';
+    let textContent = '';
+    let rawJson = '';
+
+    payloads.forEach((p, idx) => {
+      const prefix = payloads.length > 1 ? `=== Канал ${idx+1} ===\n` : '';
+      const sentenced = p.sentenced_data || p.data?.sentenced_data;
+
+      if (idx > 0) {
+        if (dialogText) dialogText += '\n\n';
+        if (textContent) textContent += '\n\n';
+        if (rawJson) rawJson += '\n\n';
+      }
+
+      rawJson += prefix + JSON.stringify(p, null, 2);
+
+      if (sentenced?.full_text_only) {
+        const ft = sentenced.full_text_only;
+        textContent += prefix + (Array.isArray(ft) ? ft.join('\n') : String(ft));
+      } else {
+        textContent += prefix + (sentenced?.raw_text_sentenced_recognition || p.data?.text || p.data?.raw_data?.channel_1?.map(x => x.data?.text).join('\n') || '');
+      }
+
+      const items = sentenced?.list_of_sentenced_recognitions;
+      if (items && items.length > 0) {
+        hasDialog = true;
+        if (dialogText) dialogText += '\n\n';
+        dialogText += prefix + items.map(item => {
+          const start = item.start != null ? item.start : (item.start_time || '');
+          const speaker = item.speaker != null ? `[${item.speaker}]` : '';
+          return `${speaker} ${start} - ${item.text || ''}`.trim();
+        }).join('\n');
+      }
+
+      const diarized = p.diarized_data || p.data?.diarized_data;
+      if (diarized && Array.isArray(diarized) && diarized.length > 0) {
+        hasDialog = true;
+        if (dialogText) dialogText += '\n\n';
+        dialogText += prefix + diarized.map(item => {
+          const start = item.start != null ? item.start : (item.start_time || '');
+          const speaker = item.speaker != null ? `[${item.speaker}]` : '';
+          return `${speaker} ${start} - ${item.text || ''}`.trim();
+        }).join('\n');
+      }
+    });
+
+    return { hasDialog, dialogText, textContent, rawJson };
+  }
+
+  function displayResult(mode, payload) {
+    const data = extractResultData(payload);
+    const container = document.getElementById(mode + 'Result');
+    const pre = document.getElementById(mode + 'ResultText');
+    if (!container || !pre) return;
+
+    container.style.display = 'block';
+
+    let btnContainer = document.getElementById(mode + 'FormatButtons');
+    if (!btnContainer) {
+      const card = pre.parentElement;
+      btnContainer = document.createElement('div');
+      btnContainer.className = 'flex gap-2 mb-2';
+      btnContainer.id = mode + 'FormatButtons';
+      card.insertBefore(btnContainer, pre);
     }
-    if (!settings.split_phrases && sentenced?.full_text_only) {
-      const ft = sentenced.full_text_only;
-      return Array.isArray(ft) ? ft.join('\n') : String(ft);
+    btnContainer.innerHTML = `
+      <button class="btn btn-ghost btn-sm" id="${mode}_btn_dialog" onclick="switchResultFormat('${mode}', 'dialog')">DIALOG</button>
+      <button class="btn btn-ghost btn-sm" id="${mode}_btn_text" onclick="switchResultFormat('${mode}', 'text')">TEXT</button>
+      <button class="btn btn-ghost btn-sm" id="${mode}_btn_raw" onclick="switchResultFormat('${mode}', 'raw')">RAW</button>
+    `;
+
+    window._resultData = window._resultData || {};
+    window._resultData[mode] = data;
+
+    const defaultFormat = data.hasDialog ? 'dialog' : 'text';
+    switchResultFormat(mode, defaultFormat);
+  }
+
+  function highlightJson(json) {
+    if (typeof json !== 'string') json = JSON.stringify(json, null, 2);
+    return json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?)/g, function(match) {
+        let cls = 'json-string';
+        if (/:$/.test(match)) { cls = 'json-key'; match = match.slice(0, -1) + '</span>:'; return '<span class="' + cls + '">' + match; }
+        return '<span class="' + cls + '">' + match + '</span>';
+      })
+      .replace(/\b(true|false|null)\b/g, '<span class="json-boolean">$1</span>')
+      .replace(/\b(\d+\.?\d*)\b/g, '<span class="json-number">$1</span>');
+  }
+
+  window.switchResultFormat = function(mode, format) {
+    const data = window._resultData?.[mode];
+    if (!data) return;
+
+    const pre = document.getElementById(mode + 'ResultText');
+    const btnDialog = document.getElementById(mode + '_btn_dialog');
+    const btnText = document.getElementById(mode + '_btn_text');
+    const btnRaw = document.getElementById(mode + '_btn_raw');
+
+    [btnDialog, btnText, btnRaw].forEach(btn => {
+      if (btn) {
+        btn.style.opacity = '0.5';
+        btn.style.borderColor = 'transparent';
+      }
+    });
+
+    const activeBtn = { dialog: btnDialog, text: btnText, raw: btnRaw }[format];
+    if (activeBtn) {
+      activeBtn.style.opacity = '1';
+      activeBtn.style.borderColor = 'var(--color-primary)';
     }
-    return sentenced?.raw_text_sentenced_recognition || payload.data?.text || payload.data?.raw_data?.channel_1?.map(x => x.data?.text).join('\n') || JSON.stringify(payload, null, 2);
+
+    if (btnDialog && !data.hasDialog) {
+      btnDialog.disabled = true;
+      btnDialog.style.opacity = '0.3';
+      btnDialog.style.cursor = 'not-allowed';
+    } else if (btnDialog) {
+      btnDialog.disabled = false;
+      btnDialog.style.cursor = 'pointer';
+    }
+
+    if (format === 'dialog') {
+      pre.textContent = data.dialogText;
+    } else if (format === 'text') {
+      pre.textContent = data.textContent;
+    } else {
+      pre.innerHTML = highlightJson(data.rawJson);
+    }
+  };
+
+  function refreshWsResult() {
+    if (wsChannelResults.length === 0) return;
+    const payloads = wsChannelResults.map(c => c.payload);
+    displayResult('ws', payloads);
   }
 
   // --- Табы ---
@@ -126,10 +251,7 @@
         body: JSON.stringify(payload)
       });
       const data = await resp.json();
-      const el = document.getElementById('urlResult');
-      const pre = document.getElementById('urlResultText');
-      el.style.display = 'block';
-      pre.textContent = renderAsrResult(data, 'url');
+      displayResult('url', data);
     } catch (e) {
       UI.toast('Ошибка: ' + e.message, 'error');
     } finally {
@@ -203,8 +325,7 @@
     try {
       const resp = await Auth.apiFetch('/api/v1/asr/file', {method:'POST', body:form});
       const data = await resp.json();
-      document.getElementById('fileResult').style.display = 'block';
-      document.getElementById('fileResultText').textContent = renderAsrResult(data, 'file');
+      displayResult('file', data);
     } catch (e) {
       UI.toast('Ошибка: ' + e.message, 'error');
     } finally {
@@ -352,9 +473,8 @@
           document.getElementById('wsPartial').textContent = `[Канал ${channel+1}]: ${text} ...`;
         }
         if (data.type === 'final_result' || data.last_message) {
-          const text = renderAsrResult(data, 'ws');
-          const current = document.getElementById('wsResultText').textContent;
-          document.getElementById('wsResultText').textContent = current + (current ? '\n\n' : '') + `=== Канал ${channel+1} ===\n${text}`;
+          wsChannelResults.push({ channel: channel + 1, payload: data });
+          refreshWsResult();
           document.getElementById('wsPartial').textContent = '';
         }
         if (data.last_message) {
@@ -394,6 +514,7 @@
     document.getElementById('btnWsStop').style.display = 'inline-flex';
     setWsStatus('connecting');
     wsSockets = [];
+    wsChannelResults = [];
     const wsParams = getWsParams();
 
     try {
