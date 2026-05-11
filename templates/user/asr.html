@@ -49,19 +49,24 @@
       <div id="url_expert_panel" class="expert-panel">
         <div class="card" style="background:var(--color-bg); margin-bottom:16px;">
           <fieldset style="border:1px solid var(--color-border);border-radius:var(--radius);padding:12px;margin-bottom:12px;">
+            <legend class="text-sm font-semibold" style="padding:0 8px;">Пред-обработка</legend>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="url_make_mono" checked> Объединить каналы (mono)</label>
+            </div>
+          </fieldset>
+          <fieldset style="border:1px solid var(--color-border);border-radius:var(--radius);padding:12px;margin-bottom:12px;">
             <legend class="text-sm font-semibold" style="padding:0 8px;">Пост-обработка</legend>
             <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
               <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="url_keep_raw" checked> Сохранить сырые данные</label>
               <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="url_do_echo_clearing"> Убрать эхо</label>
               <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="url_do_dialogue" checked> Диалог</label>
               <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="url_do_punctuation" checked> Пунктуация</label>
-              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="url_do_diarization"> Диаризация</label>
-              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="url_make_mono" checked> Объединить каналы (mono)</label>
             </div>
           </fieldset>
           <fieldset style="border:1px solid var(--color-border);border-radius:var(--radius);padding:12px;margin-bottom:12px;">
             <legend class="text-sm font-semibold" style="padding:0 8px;">Диаризация</legend>
             <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="url_do_diarization"> Диаризация</label>
               <div class="form-group" style="margin:0;">
                 <label class="text-sm text-muted">Чувствительность VAD (1–5)</label>
                 <input type="number" id="url_diar_vad_sensity" class="input" min="1" max="5" value="3" style="width:80px;">
@@ -139,19 +144,24 @@
       <div id="file_expert_panel" class="expert-panel">
         <div class="card" style="background:var(--color-bg); margin-bottom:16px;">
           <fieldset style="border:1px solid var(--color-border);border-radius:var(--radius);padding:12px;margin-bottom:12px;">
+            <legend class="text-sm font-semibold" style="padding:0 8px;">Пред-обработка</legend>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="file_make_mono" checked> Объединить каналы (mono)</label>
+            </div>
+          </fieldset>
+          <fieldset style="border:1px solid var(--color-border);border-radius:var(--radius);padding:12px;margin-bottom:12px;">
             <legend class="text-sm font-semibold" style="padding:0 8px;">Пост-обработка</legend>
             <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
               <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="file_keep_raw" checked> Сохранить сырые данные</label>
               <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="file_do_echo_clearing"> Убрать эхо</label>
               <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="file_do_dialogue" checked> Диалог</label>
               <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="file_do_punctuation" checked> Пунктуация</label>
-              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="file_do_diarization"> Диаризация</label>
-              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="file_make_mono" checked> Объединить каналы (mono)</label>
             </div>
           </fieldset>
           <fieldset style="border:1px solid var(--color-border);border-radius:var(--radius);padding:12px;margin-bottom:12px;">
             <legend class="text-sm font-semibold" style="padding:0 8px;">Диаризация</legend>
             <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="file_do_diarization"> Диаризация</label>
               <div class="form-group" style="margin:0;">
                 <label class="text-sm text-muted">Чувствительность VAD (1–5)</label>
                 <input type="number" id="file_diar_vad_sensity" class="input" min="1" max="5" value="3" style="width:80px;">

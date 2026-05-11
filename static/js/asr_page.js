@@ -430,11 +430,15 @@
       const data = await resp.json();
       if (!data || !data.length) { el.innerHTML = '<div class="text-muted">Нет сессий</div>'; return; }
       el.innerHTML = '<table style="width:100%;border-collapse:collapse;">' +
-        data.map(s => `<tr onclick="window.location.href='/history/${s.id}'" style="border-bottom:1px solid var(--color-border);cursor:pointer;">
+        data.map(s => {
+          const name = s.file_name || (s.audio_url ? s.audio_url.split('/').pop() : null) || '-';
+          return `<tr onclick="window.location.href='/history/${s.id}'" style="border-bottom:1px solid var(--color-border);cursor:pointer;">
           <td style="padding:8px 0;" class="text-sm">${UI.formatDate(s.created_at)}</td>
           <td style="padding:8px 0;" class="text-sm"><span class="badge badge-${s.status==='completed'?'success':s.status==='failed'?'danger':'warning'}">${s.status}</span></td>
           <td style="padding:8px 0;" class="text-sm">${s.session_type}</td>
-        </tr>`).join('') + '</table>';
+          <td style="padding:8px 0;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" class="text-sm text-muted" title="${name}">${name}</td>
+        </tr>`;
+        }).join('') + '</table>';
     } catch (e) {
       el.innerHTML = '<div class="text-muted">Не удалось загрузить</div>';
     }
