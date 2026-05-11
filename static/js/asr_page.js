@@ -27,19 +27,25 @@
   window.switchTab = switchTab;
 
   // --- Утилиты ---
-  function copyText(elId) {
+  function copyText(elId, btn) {
+    UI.setLoading(btn, true);
     const text = document.getElementById(elId).textContent;
-    navigator.clipboard.writeText(text).then(() => UI.toast('Скопировано', 'success'));
+    navigator.clipboard.writeText(text).then(() => {
+      UI.toast('Скопировано', 'success');
+      UI.setLoading(btn, false);
+    }).catch(() => UI.setLoading(btn, false));
   }
   window.copyText = copyText;
 
-  function downloadText(elId, filename) {
+  function downloadText(elId, filename, btn) {
+    UI.setLoading(btn, true);
     const text = document.getElementById(elId).textContent;
     const blob = new Blob([text], {type:'text/plain'});
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = filename;
     a.click();
+    setTimeout(() => UI.setLoading(btn, false), 500);
   }
   window.downloadText = downloadText;
 
@@ -143,6 +149,12 @@
   window.handleDrop = handleDrop;
 
   function handleFileSelect(file) {
+    if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+      UI.toast('Файл слишком большой. Максимум ' + MAX_FILE_SIZE_MB + ' МБ', 'error');
+      selectedFile = null;
+      document.getElementById('btnFile').disabled = true;
+      return;
+    }
     selectedFile = file;
     document.getElementById('btnFile').disabled = false;
     UI.toast('Файл выбран: ' + file.name, 'info');
@@ -209,15 +221,24 @@
 
   function onWsFileSelected() {
     const f = document.getElementById('wsFileInput').files[0];
+    if (f && f.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+      UI.toast('Файл слишком большой. Максимум ' + MAX_FILE_SIZE_MB + ' МБ', 'error');
+      document.getElementById('wsFileInput').value = '';
+      document.getElementById('btnWs').disabled = true;
+      return;
+    }
     document.getElementById('btnWs').disabled = !f;
   }
   window.onWsFileSelected = onWsFileSelected;
 
+  const MAX_FILE_SIZE_MB = 100;
+
   function setWsStatus(status) {
     const dot = document.getElementById('wsStatusDot');
     const txt = document.getElementById('wsStatusText');
+    dot.classList.remove('ws-connecting');
     if (status === 'connected') { dot.style.background = 'var(--color-success)'; txt.textContent = 'Подключено'; }
-    else if (status === 'connecting') { dot.style.background = 'var(--color-warning)'; txt.textContent = 'Подключение...'; }
+    else if (status === 'connecting') { dot.style.background = 'var(--color-warning)'; txt.textContent = 'Подключение...'; dot.classList.add('ws-connecting'); }
     else { dot.style.background = 'var(--color-danger)'; txt.textContent = 'Отключено'; }
   }
 
@@ -409,11 +430,10 @@
       const data = await resp.json();
       if (!data || !data.length) { el.innerHTML = '<div class="text-muted">Нет сессий</div>'; return; }
       el.innerHTML = '<table style="width:100%;border-collapse:collapse;">' +
-        data.map(s => `<tr style="border-bottom:1px solid var(--color-border);">
+        data.map(s => `<tr onclick="window.location.href='/history/${s.id}'" style="border-bottom:1px solid var(--color-border);cursor:pointer;">
           <td style="padding:8px 0;" class="text-sm">${UI.formatDate(s.created_at)}</td>
           <td style="padding:8px 0;" class="text-sm"><span class="badge badge-${s.status==='completed'?'success':s.status==='failed'?'danger':'warning'}">${s.status}</span></td>
           <td style="padding:8px 0;" class="text-sm">${s.session_type}</td>
-          <td style="padding:8px 0;" class="text-sm"><a href="/history/${s.id}" style="color:var(--color-primary);">Открыть</a></td>
         </tr>`).join('') + '</table>';
     } catch (e) {
       el.innerHTML = '<div class="text-muted">Не удалось загрузить</div>';

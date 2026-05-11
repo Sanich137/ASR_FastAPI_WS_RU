@@ -7,7 +7,7 @@
     <nav class="flex flex-col gap-2">
       <a href="/dashboard" class="nav-item {% if request.url.path == '/dashboard' %}active{% endif %}">Dashboard</a>
       <a href="/asr" class="nav-item {% if request.url.path == '/asr' %}active{% endif %}">Распознавание</a>
-      <a href="/history" class="nav-item {% if request.url.path == '/history' %}active{% endif %}">История</a>
+      <a href="/history" class="nav-item {% if request.url.path.startswith('/history') %}active{% endif %}">История</a>
       <a href="/subscription" class="nav-item {% if request.url.path == '/subscription' %}active{% endif %}">Подписка</a>
       <a href="/profile" class="nav-item {% if request.url.path == '/profile' %}active{% endif %}">Профиль</a>
       <a href="/api-keys" class="nav-item {% if request.url.path == '/api-keys' %}active{% endif %}">API-ключи</a>
@@ -18,7 +18,7 @@
   <nav class="show-md" style="position:fixed;bottom:0;left:0;right:0;background:var(--color-surface);border-top:1px solid var(--color-border);display:flex;justify-content:space-around;padding:8px 0;z-index:100;">
     <a href="/dashboard" class="nav-item-m {% if request.url.path == '/dashboard' %}active{% endif %}">🏠</a>
     <a href="/asr" class="nav-item-m {% if request.url.path == '/asr' %}active{% endif %}">🎙</a>
-    <a href="/history" class="nav-item-m {% if request.url.path == '/history' %}active{% endif %}">📋</a>
+    <a href="/history" class="nav-item-m {% if request.url.path.startswith('/history') %}active{% endif %}">📋</a>
     <a href="/profile" class="nav-item-m {% if request.url.path == '/profile' %}active{% endif %}">👤</a>
   </nav>
 

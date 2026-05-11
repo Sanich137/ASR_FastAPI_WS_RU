@@ -96,12 +96,11 @@
         return;
       }
       const rows = data.map(s => `
-        <tr>
+        <tr onclick="window.location.href='/history/${s.id}'" style="cursor:pointer;">
           <td class="text-sm">${UI.formatDate(s.created_at)}</td>
           <td class="text-sm"><span class="badge badge-${s.status === 'completed' ? 'success' : s.status === 'failed' ? 'danger' : 'warning'}">${s.status}</span></td>
           <td class="text-sm">${s.session_type}</td>
           <td class="text-sm">${s.audio_duration_sec ? UI.formatDuration(s.audio_duration_sec) : '-'}</td>
-          <td class="text-sm"><a href="/history/${s.id}" style="color:var(--color-primary);">Открыть</a></td>
         </tr>
       `).join('');
       el.innerHTML = `
@@ -113,7 +112,6 @@
               <th style="padding:8px 0;">Статус</th>
               <th style="padding:8px 0;">Тип</th>
               <th style="padding:8px 0;">Длительность</th>
-              <th style="padding:8px 0;"></th>
             </tr>
           </thead>
           <tbody>${rows}</tbody>
@@ -128,5 +126,15 @@
   loadQuota();
   loadStats();
   loadSessions();
+  setInterval(() => {
+    loadQuota();
+    loadStats();
+    loadSessions();
+  }, 60000);
 </script>
+
+<style>
+  #widget-sessions tbody tr { cursor: pointer; }
+  #widget-sessions tbody tr:hover { background: rgba(59,130,246,.08); }
+</style>
 {% endblock %}

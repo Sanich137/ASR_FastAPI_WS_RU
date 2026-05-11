@@ -11,7 +11,7 @@
   </div>
 
   <div class="flex gap-2 mt-4">
-    <a href="/history" class="btn btn-ghost">← Назад к истории</a>
+    <a href="javascript:void(0)" class="btn btn-ghost" onclick="goBackToHistory()">← Назад</a>
   </div>
 </div>
 
@@ -58,11 +58,11 @@
           <div class="flex items-center justify-between" style="margin-bottom:12px;">
             <h3 style="margin:0;">Результат</h3>
             <div class="flex gap-2">
-              <button class="btn btn-ghost btn-sm" onclick="downloadJson()">Скачать JSON</button>
-              <button class="btn btn-ghost btn-sm" onclick="downloadTxt()">Скачать TXT</button>
+              <button class="btn btn-ghost btn-sm" id="btnDownloadJson" onclick="downloadJson()">Скачать JSON</button>
+              <button class="btn btn-ghost btn-sm" id="btnDownloadTxt" onclick="downloadTxt()">Скачать TXT</button>
             </div>
           </div>
-          <pre id="resultPre" style="background:var(--color-bg);padding:16px;border-radius:var(--radius);overflow:auto;max-height:500px;font-size:13px;">${escapeHtml(resultJson)}</pre>
+          <pre id="resultPre" style="background:var(--color-bg);padding:16px;border-radius:var(--radius);overflow:auto;max-height:500px;font-size:13px;">${highlightJson(resultJson)}</pre>
         </div>
       `;
       window._sessionData = s;
@@ -70,6 +70,18 @@
       el.innerHTML = `<div class="text-muted">Не удалось загрузить детали <button class="btn btn-ghost btn-sm" onclick="loadSessionDetail()">Повторить</button></div>`;
       UI.toast(e.message, 'error');
     }
+  }
+
+  function highlightJson(json) {
+    if (typeof json !== 'string') json = JSON.stringify(json, null, 2);
+    return json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?)/g, function(match) {
+        let cls = 'json-string';
+        if (/:$/.test(match)) { cls = 'json-key'; match = match.slice(0, -1) + '</span>:'; return '<span class="' + cls + '">' + match; }
+        return '<span class="' + cls + '">' + match + '</span>';
+      })
+      .replace(/\b(true|false|null)\b/g, '<span class="json-boolean">$1</span>')
+      .replace(/\b(\d+\.?\d*)\b/g, '<span class="json-number">$1</span>');
   }
 
   function escapeHtml(str) {
@@ -80,25 +92,48 @@
 
   function downloadJson() {
     if (!window._sessionData || !window._sessionData.result_json) return;
-    const blob = new Blob([JSON.stringify(window._sessionData.result_json, null, 2)], {type:'application/json'});
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'session_' + sessionId + '.json';
-    a.click();
+    const btn = document.getElementById('btnDownloadJson');
+    UI.setLoading(btn, true);
+    try {
+      const blob = new Blob([JSON.stringify(window._sessionData.result_json, null, 2)], {type:'application/json'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'session_' + sessionId + '.json';
+      a.click();
+    } finally { UI.setLoading(btn, false); }
   }
 
   function downloadTxt() {
     if (!window._sessionData || !window._sessionData.result_json) return;
-    const text = window._sessionData.result_json.sentenced_data?.raw_text_sentenced_recognition 
-      || window._sessionData.result_json.raw_data?.channel_1?.map(x => x.data?.text).join('\n') 
-      || JSON.stringify(window._sessionData.result_json, null, 2);
-    const blob = new Blob([text], {type:'text/plain'});
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'session_' + sessionId + '.txt';
-    a.click();
+    const btn = document.getElementById('btnDownloadTxt');
+    UI.setLoading(btn, true);
+    try {
+      const text = window._sessionData.result_json.sentenced_data?.raw_text_sentenced_recognition 
+        || window._sessionData.result_json.raw_data?.channel_1?.map(x => x.data?.text).join('\n') 
+        || JSON.stringify(window._sessionData.result_json, null, 2);
+      const blob = new Blob([text], {type:'text/plain'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'session_' + sessionId + '.txt';
+      a.click();
+    } finally { UI.setLoading(btn, false); }
   }
 
+  function goBackToHistory() {
+    if (history.length > 1) {
+      history.back();
+    } else {
+      window.location.href = '/history';
+    }
+  }
+
+<style>
+  .json-key { color: #93c5fd; }
+  .json-string { color: #86efac; }
+  .json-number { color: #fca5a5; }
+  .json-boolean { color: #f0abfc; }
+</style>
+<script>
   loadSessionDetail();
 </script>
 {% endblock %}

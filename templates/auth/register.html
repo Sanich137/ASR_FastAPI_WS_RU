@@ -17,7 +17,7 @@
       </div>
       <div class="form-group">
         <label for="password">Пароль</label>
-        <input type="password" id="password" class="input" placeholder="••••••" required minlength="6">
+        <input type="password" id="password" class="input" placeholder="••••••" required minlength="8">
       </div>
       <button type="submit" class="btn btn-primary w-full" id="btnRegister" onclick="handleRegister()">Зарегистрироваться</button>
     </form>
@@ -67,6 +67,9 @@
 
   document.getElementById('regForm').addEventListener('keypress', function(e) {
     if (e.key === 'Enter') handleRegister();
+  });
+  document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('email').focus();
   });
 </script>
 {% endblock %}

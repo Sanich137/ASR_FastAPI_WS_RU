@@ -27,6 +27,18 @@
           <option value="failed">Ошибка</option>
         </select>
       </div>
+      <div class="form-group" style="flex:1;min-width:200px;">
+        <label>Дата с</label>
+        <input type="date" id="filterDateFrom" class="input">
+      </div>
+      <div class="form-group" style="flex:1;min-width:200px;">
+        <label>Дата по</label>
+        <input type="date" id="filterDateTo" class="input">
+      </div>
+      <div class="form-group" style="flex:1;min-width:200px;">
+        <label>Поиск по ID</label>
+        <input type="text" id="filterSearch" class="input" placeholder="ID сессии..." oninput="debounceSearch()">
+      </div>
       <button class="btn btn-primary" onclick="applyFilters()">Применить</button>
       <button class="btn btn-ghost" onclick="resetFilters()">Сбросить</button>
     </div>
@@ -46,7 +58,7 @@
 <script>
   let historyOffset = 0;
   const historyLimit = 20;
-  let historyFilters = { type: '', status: '' };
+  let historyFilters = { type: '', status: '', date_from: '', date_to: '', search: '' };
 
   async function fetchHistory(append = false) {
     const container = document.getElementById('historyTableContainer');
@@ -60,6 +72,9 @@
     const params = new URLSearchParams({ limit: historyLimit, offset: historyOffset });
     if (historyFilters.type) params.append('session_type', historyFilters.type);
     if (historyFilters.status) params.append('status', historyFilters.status);
+    if (historyFilters.date_from) params.append('date_from', historyFilters.date_from);
+    if (historyFilters.date_to) params.append('date_to', historyFilters.date_to);
+    if (historyFilters.search) params.append('search', historyFilters.search);
 
     try {
       const resp = await Auth.apiFetch('/api/v1/user/sessions?' + params.toString());
@@ -134,16 +149,30 @@
     tbody.insertAdjacentHTML('beforeend', rows);
   }
 
+  let _filterTimeout = null;
   function applyFilters() {
-    historyFilters.type = document.getElementById('filterType').value;
-    historyFilters.status = document.getElementById('filterStatus').value;
-    fetchHistory(false);
+    if (_filterTimeout) clearTimeout(_filterTimeout);
+    _filterTimeout = setTimeout(() => {
+      historyFilters.type = document.getElementById('filterType').value;
+      historyFilters.status = document.getElementById('filterStatus').value;
+      historyFilters.date_from = document.getElementById('filterDateFrom').value;
+      historyFilters.date_to = document.getElementById('filterDateTo').value;
+      historyFilters.search = document.getElementById('filterSearch').value.trim();
+      fetchHistory(false);
+    }, 300);
+  }
+
+  function debounceSearch() {
+    applyFilters();
   }
 
   function resetFilters() {
     document.getElementById('filterType').value = '';
     document.getElementById('filterStatus').value = '';
-    historyFilters = { type: '', status: '' };
+    document.getElementById('filterDateFrom').value = '';
+    document.getElementById('filterDateTo').value = '';
+    document.getElementById('filterSearch').value = '';
+    historyFilters = { type: '', status: '', date_from: '', date_to: '', search: '' };
     fetchHistory(false);
   }
 

@@ -13,17 +13,14 @@
 
   <!-- Доступные тарифы -->
   <h3 style="margin:0 0 16px;">Доступные тарифы</h3>
-  <div class="card mb-4">
-    <div class="text-muted" style="padding:24px;text-align:center;">
-      Выбор и оплата тарифов — в разработке.<br>
-      <a href="/asr" style="color:var(--color-primary);">Перейти к распознаванию</a>
-    </div>
+  <div class="card mb-4" id="tariffsContainer">
+    <div class="skeleton" style="height:120px;"></div>
   </div>
 
   <!-- История платежей -->
   <h3 style="margin:0 0 16px;">История платежей</h3>
-  <div class="card">
-    <div class="text-muted" style="padding:24px;text-align:center;">Нет данных</div>
+  <div class="card" id="paymentsContainer">
+    <div class="skeleton" style="height:80px;"></div>
   </div>
 </div>
 
@@ -64,7 +61,7 @@
           </div>
         </div>
         <div class="flex gap-2 mt-4">
-          <button class="btn btn-ghost btn-sm" onclick="cancelRenew()">Отключить авто-продление</button>
+          <button class="btn btn-ghost btn-sm" onclick="cancelRenew(this)">Отключить авто-продление</button>
         </div>
       `;
     } catch (e) {
@@ -73,8 +70,9 @@
     }
   }
 
-  async function cancelRenew() {
+  async function cancelRenew(btn) {
     UI.confirmDialog('Отключить авто-продление?', 'Вы уверены?', async () => {
+      if (btn) UI.setLoading(btn, true);
       try {
         const resp = await Auth.apiFetch('/api/v1/user/subscription/cancel', {method:'POST'});
         if (!resp.ok) throw new Error('Ошибка');
@@ -82,10 +80,61 @@
         loadSubscription();
       } catch (e) {
         UI.toast(e.message, 'error');
+      } finally {
+        if (btn) UI.setLoading(btn, false);
       }
     });
   }
 
+  async function loadTariffs() {
+    const el = document.getElementById('tariffsContainer');
+    setTimeout(() => {
+      el.innerHTML = `
+        <div class="text-muted" style="padding:24px;text-align:center;">
+          Выбор и оплата тарифов — в разработке.<br>
+          <a href="/asr" style="color:var(--color-primary);">Перейти к распознаванию</a>
+        </div>
+      `;
+    }, 500);
+  }
+
+  async function loadPayments() {
+    const el = document.getElementById('paymentsContainer');
+    try {
+      const resp = await Auth.apiFetch('/api/v1/user/payments');
+      if (!resp.ok) throw new Error();
+      const data = await resp.json();
+      if (!data || !data.length) {
+        el.innerHTML = '<div class="text-muted" style="padding:24px;text-align:center;">Нет платежей</div>';
+        return;
+      }
+      el.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="color:var(--color-muted);font-size:12px;text-align:left;border-bottom:1px solid var(--color-border);">
+              <th style="padding:12px 8px;">Дата</th>
+              <th style="padding:12px 8px;">Сумма</th>
+              <th style="padding:12px 8px;">Статус</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.map(p => `
+              <tr style="border-bottom:1px solid var(--color-border);">
+                <td style="padding:12px 8px;" class="text-sm">${UI.formatDate(p.created_at)}</td>
+                <td style="padding:12px 8px;" class="text-sm">${p.amount} ${p.currency}</td>
+                <td style="padding:12px 8px;" class="text-sm"><span class="badge badge-${p.status==='succeeded'?'success':p.status==='cancelled'?'danger':'warning'}">${p.status}</span></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    } catch (e) {
+      el.innerHTML = '<div class="text-muted" style="padding:24px;text-align:center;">Нет данных</div>';
+    }
+  }
+
   loadSubscription();
+  loadTariffs();
+  loadPayments();
 </script>
 {% endblock %}

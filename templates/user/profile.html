@@ -34,7 +34,7 @@
       </div>
       <div class="form-group">
         <label>Новый пароль</label>
-        <input type="password" id="newPwd" class="input" placeholder="••••••" minlength="6">
+        <input type="password" id="newPwd" class="input" placeholder="••••••" minlength="8">
       </div>
       <div class="form-group">
         <label>Подтвердите новый пароль</label>
@@ -114,7 +114,28 @@
   }
 
   function deleteAccount() {
-    UI.confirmDialog('Удалить аккаунт?', 'Все данные будут сохранены, но доступ закрыт. Продолжить?', async () => {
+    const dialog = document.createElement('dialog');
+    dialog.innerHTML = `
+      <div style="padding:16px;max-width:360px;">
+        <h3 style="margin:0 0 8px;color:var(--color-danger);">Удалить аккаунт</h3>
+        <p style="margin:0 0 16px;color:var(--color-muted);">Введите слово <b>УДАЛИТЬ</b> для подтверждения.</p>
+        <input type="text" id="confirmDeleteInput" class="input" placeholder="УДАЛИТЬ" style="margin-bottom:16px;">
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button class="btn btn-ghost" id="dlg-cancel">Отмена</button>
+          <button class="btn btn-danger" id="dlg-confirm" disabled>Подтвердить</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(dialog);
+    dialog.showModal();
+    const input = dialog.querySelector('#confirmDeleteInput');
+    const confirmBtn = dialog.querySelector('#dlg-confirm');
+    input.addEventListener('input', () => {
+      confirmBtn.disabled = input.value.trim() !== 'УДАЛИТЬ';
+    });
+    dialog.querySelector('#dlg-cancel').onclick = () => { dialog.close(); dialog.remove(); };
+    dialog.querySelector('#dlg-confirm').onclick = async () => {
+      dialog.close(); dialog.remove();
       try {
         const resp = await Auth.apiFetch('/api/v1/user/profile', {method: 'DELETE'});
         if (!resp.ok) throw new Error('Ошибка');
@@ -123,7 +144,8 @@
       } catch (e) {
         UI.toast(e.message, 'error');
       }
-    });
+    };
+    dialog.addEventListener('close', () => dialog.remove());
   }
 
   loadProfile();

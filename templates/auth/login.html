@@ -62,5 +62,8 @@
   document.getElementById('loginForm').addEventListener('keypress', function(e) {
     if (e.key === 'Enter') handleLogin();
   });
+  document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('email').focus();
+  });
 </script>
 {% endblock %}

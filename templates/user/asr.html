@@ -18,7 +18,7 @@
   {% endif %}
 
   <!-- Вкладки -->
-  <div class="flex gap-2 mb-4" style="border-bottom:1px solid var(--color-border);">
+  <div class="flex gap-2 mb-4">
     <button class="btn btn-ghost tab-btn active" onclick="switchTab('url')" id="tab-url">По ссылке</button>
     <button class="btn btn-ghost tab-btn" onclick="switchTab('file')" id="tab-file">Загрузка файла</button>
     <button class="btn btn-ghost tab-btn" onclick="switchTab('ws')" id="tab-ws">WebSocket (WAV)</button>
@@ -101,8 +101,8 @@
         <div class="card" style="background:var(--color-bg);">
           <pre id="urlResultText" style="white-space:pre-wrap;word-break:break-word;"></pre>
           <div class="flex gap-2 mt-4">
-            <button class="btn btn-ghost btn-sm" onclick="copyText('urlResultText')">Копировать</button>
-            <button class="btn btn-ghost btn-sm" onclick="downloadText('urlResultText','result.txt')">Скачать .txt</button>
+            <button class="btn btn-ghost btn-sm" onclick="copyText('urlResultText', this)">Копировать</button>
+            <button class="btn btn-ghost btn-sm" onclick="downloadText('urlResultText','result.txt', this)">Скачать .txt</button>
           </div>
         </div>
       </div>
@@ -192,8 +192,8 @@
         <div class="card" style="background:var(--color-bg);">
           <pre id="fileResultText" style="white-space:pre-wrap;word-break:break-word;"></pre>
           <div class="flex gap-2 mt-4">
-            <button class="btn btn-ghost btn-sm" onclick="copyText('fileResultText')">Копировать</button>
-            <button class="btn btn-ghost btn-sm" onclick="downloadText('fileResultText','result.txt')">Скачать .txt</button>
+            <button class="btn btn-ghost btn-sm" onclick="copyText('fileResultText', this)">Копировать</button>
+            <button class="btn btn-ghost btn-sm" onclick="downloadText('fileResultText','result.txt', this)">Скачать .txt</button>
           </div>
         </div>
       </div>
@@ -276,8 +276,8 @@
           <div id="wsPartial" class="text-muted text-sm mb-2"></div>
           <pre id="wsResultText" style="white-space:pre-wrap;word-break:break-word;"></pre>
           <div class="flex gap-2 mt-4">
-            <button class="btn btn-ghost btn-sm" onclick="copyText('wsResultText')">Копировать</button>
-            <button class="btn btn-ghost btn-sm" onclick="downloadText('wsResultText','result.txt')">Скачать .txt</button>
+            <button class="btn btn-ghost btn-sm" onclick="copyText('wsResultText', this)">Копировать</button>
+            <button class="btn btn-ghost btn-sm" onclick="downloadText('wsResultText','result.txt', this)">Скачать .txt</button>
           </div>
         </div>
       </div>
@@ -292,6 +292,14 @@
 </div>
 
 <style>
+  @keyframes pulse-dot {
+    0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); }
+    70% { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+  }
+  .ws-connecting {
+    animation: pulse-dot 1.5s infinite;
+  }
   .expert-panel {
     overflow: hidden;
     max-height: 0;
@@ -302,6 +310,13 @@
     max-height: 2000px;
     opacity: 1;
   }
+  .tab-btn.active {
+    background: rgba(59, 130, 246, 0.2);
+    color: var(--color-primary);
+    border-color: var(--color-primary);
+  }
+  #asrHistory tbody tr { cursor: pointer; }
+  #asrHistory tbody tr:hover { background: rgba(59,130,246,.08); }
 </style>
 <script src="/static/js/asr_settings.js"></script>
 <script>
