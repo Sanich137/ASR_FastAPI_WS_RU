@@ -11,7 +11,7 @@
     <div class="flex gap-4" style="flex-wrap:wrap;align-items:flex-end;">
       <div class="form-group" style="flex:1;min-width:200px;">
         <label>Тип</label>
-        <select id="filterType" class="input">
+        <select id="filterType" class="input" onchange="applyFilters()">
           <option value="">Все</option>
           <option value="url">URL</option>
           <option value="file">Файл</option>
@@ -20,7 +20,7 @@
       </div>
       <div class="form-group" style="flex:1;min-width:200px;">
         <label>Статус</label>
-        <select id="filterStatus" class="input">
+        <select id="filterStatus" class="input" onchange="applyFilters()">
           <option value="">Все</option>
           <option value="completed">Завершено</option>
           <option value="processing">В процессе</option>
@@ -29,17 +29,16 @@
       </div>
       <div class="form-group" style="flex:1;min-width:200px;">
         <label>Дата с</label>
-        <input type="date" id="filterDateFrom" class="input">
+        <input type="date" id="filterDateFrom" class="input" onchange="applyFilters()">
       </div>
       <div class="form-group" style="flex:1;min-width:200px;">
         <label>Дата по</label>
-        <input type="date" id="filterDateTo" class="input">
+        <input type="date" id="filterDateTo" class="input" onchange="applyFilters()">
       </div>
       <div class="form-group" style="flex:1;min-width:200px;">
         <label>Поиск по ID</label>
         <input type="text" id="filterSearch" class="input" placeholder="ID сессии..." oninput="debounceSearch()">
       </div>
-      <button class="btn btn-primary" onclick="applyFilters()">Применить</button>
       <button class="btn btn-ghost" onclick="resetFilters()">Сбросить</button>
     </div>
   </div>
@@ -60,6 +59,8 @@
   const historyLimit = 20;
   let historyFilters = { type: '', status: '', date_from: '', date_to: '', search: '' };
 
+  let _historyAbortController = null;
+
   async function fetchHistory(append = false) {
     const container = document.getElementById('historyTableContainer');
     const btn = document.getElementById('btnLoadMore');
@@ -69,6 +70,11 @@
     }
     if (btn) UI.setLoading(btn, true);
 
+    if (_historyAbortController) {
+      _historyAbortController.abort();
+    }
+    _historyAbortController = new AbortController();
+
     const params = new URLSearchParams({ limit: historyLimit, offset: historyOffset });
     if (historyFilters.type) params.append('session_type', historyFilters.type);
     if (historyFilters.status) params.append('status', historyFilters.status);
@@ -77,9 +83,28 @@
     if (historyFilters.search) params.append('search', historyFilters.search);
 
     try {
-      const resp = await Auth.apiFetch('/api/v1/user/sessions?' + params.toString());
+      const resp = await Auth.apiFetch('/api/v1/user/sessions?' + params.toString(), { signal: _historyAbortController.signal, cache: 'no-store' });
       if (!resp.ok) throw new Error('Ошибка загрузки');
-      const data = await resp.json();
+      let data = await resp.json();
+
+      // Клиентская фильтрация (fallback, если бэкенд игнорирует query-фильтры)
+      if (historyFilters.type || historyFilters.status || historyFilters.search || historyFilters.date_from || historyFilters.date_to) {
+        data = data.filter(s => {
+          if (historyFilters.type && s.session_type !== historyFilters.type) return false;
+          if (historyFilters.status && s.status !== historyFilters.status) return false;
+          if (historyFilters.search && !(s.id || '').toLowerCase().includes(historyFilters.search.toLowerCase())) return false;
+          if (historyFilters.date_from) {
+            const from = new Date(historyFilters.date_from);
+            if (new Date(s.created_at) < from) return false;
+          }
+          if (historyFilters.date_to) {
+            const to = new Date(historyFilters.date_to);
+            to.setDate(to.getDate() + 1);
+            if (new Date(s.created_at) >= to) return false;
+          }
+          return true;
+        });
+      }
 
       if (!append) container.innerHTML = '';
       renderHistoryTable(data, append);
@@ -91,6 +116,7 @@
       }
       historyOffset += data.length;
     } catch (e) {
+      if (e.name === 'AbortError') return;
       if (!append) container.innerHTML = '<div class="text-muted">Не удалось загрузить историю <button class="btn btn-ghost btn-sm" onclick="fetchHistory()">Повторить</button></div>';
       UI.toast(e.message, 'error');
     } finally {
