@@ -21,6 +21,7 @@
   <div class="flex gap-2 mb-4">
     <button class="btn btn-ghost tab-btn active" onclick="switchTab('url')" id="tab-url">По ссылке</button>
     <button class="btn btn-ghost tab-btn" onclick="switchTab('file')" id="tab-file">Загрузка файла</button>
+    <button class="btn btn-ghost tab-btn" onclick="switchTab('mic')" id="tab-mic">🎙 Микрофон</button>
     <button class="btn btn-ghost tab-btn" onclick="switchTab('ws')" id="tab-ws">WebSocket (WAV)</button>
   </div>
 
@@ -108,7 +109,7 @@
           <pre id="urlResultText" style="white-space:pre-wrap;word-break:break-word;"></pre>
           <div class="flex gap-2 mt-4">
             <button class="btn btn-ghost btn-sm" onclick="copyText('urlResultText', this)">Копировать</button>
-            <button class="btn btn-ghost btn-sm" onclick="downloadText('urlResultText','result.txt', this)">Скачать .txt</button>
+            <button class="btn btn-ghost btn-sm" onclick="downloadResult('url', this)">Скачать</button>
           </div>
         </div>
       </div>
@@ -205,14 +206,118 @@
           <pre id="fileResultText" style="white-space:pre-wrap;word-break:break-word;"></pre>
           <div class="flex gap-2 mt-4">
             <button class="btn btn-ghost btn-sm" onclick="copyText('fileResultText', this)">Копировать</button>
-            <button class="btn btn-ghost btn-sm" onclick="downloadText('fileResultText','result.txt', this)">Скачать .txt</button>
+            <button class="btn btn-ghost btn-sm" onclick="downloadResult('file', this)">Скачать</button>
           </div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Секция 3: WebSocket WAV -->
+  <!-- Секция 3: Микрофон -->
+  <div id="panel-mic" class="tab-panel" style="display:none;">
+    <div class="card">
+      <div id="micIdleBlock" style="text-align:center;padding:32px;">
+        <button class="btn btn-danger" id="btnMicRecord" onclick="startRecording()" style="width:120px;height:120px;border-radius:50%;font-size:48px;">🎙</button>
+        <p class="text-muted mt-4">Нажмите для начала записи</p>
+      </div>
+      <div id="micRecordingBlock" style="display:none;text-align:center;padding:32px;">
+        <div class="flex items-center justify-center gap-4 mb-4">
+          <div id="micRecDot" style="width:16px;height:16px;border-radius:50%;background:var(--color-danger);"></div>
+          <span id="micTimer" style="font-size:24px;font-family:monospace;">00:00</span>
+        </div>
+        <button class="btn btn-danger" id="btnMicStop" onclick="stopRecording()">⏹ Стоп</button>
+      </div>
+      <div id="micPreviewBlock" style="display:none;">
+        <audio id="micAudioPlayer" controls style="width:100%;margin-bottom:16px;"></audio>
+        <div class="flex gap-2 mb-4">
+          <button class="btn btn-ghost" onclick="resetRecording()">🔄 Записать заново</button>
+        </div>
+      </div>
+      <div class="flex items-center justify-between mb-4 mt-4">
+        <div class="flex gap-4" style="flex-wrap:wrap;">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" id="mic_fast_speech"> Быстрая речь
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" id="mic_split_phrases" checked> Разбить на фразы
+          </label>
+        </div>
+        <label class="flex items-center gap-2" style="cursor:pointer;">
+          <input type="checkbox" id="mic_expert" onchange="toggleExpert('mic')">
+          <span class="text-sm font-semibold">Эксперт</span>
+          <span id="mic_expert_badge" class="badge badge-warning" style="display:none; font-size:10px; padding:2px 6px;">●</span>
+        </label>
+      </div>
+      <div id="mic_expert_panel" class="expert-panel">
+        <div class="card" style="background:var(--color-bg); margin-bottom:16px;">
+          <fieldset style="border:1px solid var(--color-border);border-radius:var(--radius);padding:12px;margin-bottom:12px;">
+            <legend class="text-sm font-semibold" style="padding:0 8px;">Пред-обработка</legend>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="mic_make_mono" checked> Объединить каналы (mono)</label>
+            </div>
+          </fieldset>
+          <fieldset style="border:1px solid var(--color-border);border-radius:var(--radius);padding:12px;margin-bottom:12px;">
+            <legend class="text-sm font-semibold" style="padding:0 8px;">Пост-обработка</legend>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="mic_keep_raw" checked> Сохранить сырые данные</label>
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="mic_do_echo_clearing"> Убрать эхо</label>
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="mic_do_dialogue" checked> Диалог</label>
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="mic_do_punctuation" checked> Пунктуация</label>
+            </div>
+          </fieldset>
+          <fieldset style="border:1px solid var(--color-border);border-radius:var(--radius);padding:12px;margin-bottom:12px;">
+            <legend class="text-sm font-semibold" style="padding:0 8px;">Диаризация</legend>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="mic_do_diarization"> Диаризация</label>
+              <div class="form-group" style="margin:0;">
+                <label class="text-sm text-muted">Чувствительность VAD (1–5)</label>
+                <input type="number" id="mic_diar_vad_sensity" class="input" min="1" max="5" value="3" style="width:80px;">
+                <div class="text-sm" id="mic_err_diar_vad_sensity" style="color:var(--color-danger); display:none;"></div>
+              </div>
+            </div>
+          </fieldset>
+          <fieldset style="border:1px solid var(--color-border);border-radius:var(--radius);padding:12px;margin-bottom:12px;">
+            <legend class="text-sm font-semibold" style="padding:0 8px;">Скорость речи</legend>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="mic_do_auto_speech_speed_correction"> Коррекция скорости речи</label>
+              <div class="form-group" style="margin:0;">
+                <label class="text-sm text-muted">Множитель скорости</label>
+                <input type="number" id="mic_speech_speed_correction_multiplier" class="input" step="0.1" min="0.1" value="1.0" style="width:80px;">
+                <div class="text-sm" id="mic_err_speech_speed_correction_multiplier" style="color:var(--color-danger); display:none;"></div>
+              </div>
+            </div>
+          </fieldset>
+          <fieldset style="border:1px solid var(--color-border);border-radius:var(--radius);padding:12px;margin-bottom:12px;">
+            <legend class="text-sm font-semibold" style="padding:0 8px;">Производительность</legend>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+              <label class="flex items-center gap-2" style="cursor:pointer;"><input type="checkbox" id="mic_use_batch"> Пакетная обработка</label>
+              <div class="form-group" style="margin:0;">
+                <label class="text-sm text-muted">Batch size</label>
+                <input type="number" id="mic_batch_size" class="input" min="1" value="8" style="width:80px;">
+                <div class="text-sm" id="mic_err_batch_size" style="color:var(--color-danger); display:none;"></div>
+              </div>
+            </div>
+          </fieldset>
+          <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+            <button type="button" class="btn btn-ghost btn-sm" onclick="resetExpertMode('mic')">Сбросить настройки</button>
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-primary w-full" id="btnMicSend" onclick="sendMic()" disabled>Отправить</button>
+      <div id="micResult" class="mt-4" style="display:none;">
+        <div class="card" style="background:var(--color-bg);">
+          <div class="flex gap-2 mb-2" id="micFormatButtons"></div>
+          <pre id="micResultText" style="white-space:pre-wrap;word-break:break-word;"></pre>
+          <div class="flex gap-2 mt-4">
+            <button class="btn btn-ghost btn-sm" onclick="copyText('micResultText', this)">Копировать</button>
+            <button class="btn btn-ghost btn-sm" onclick="downloadResult('mic', this)">Скачать</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Секция 4: WebSocket WAV -->
   <div id="panel-ws" class="tab-panel" style="display:none;">
     <div class="card">
       <div class="flex items-center gap-4 mb-4">
@@ -290,7 +395,7 @@
           <pre id="wsResultText" style="white-space:pre-wrap;word-break:break-word;"></pre>
           <div class="flex gap-2 mt-4">
             <button class="btn btn-ghost btn-sm" onclick="copyText('wsResultText', this)">Копировать</button>
-            <button class="btn btn-ghost btn-sm" onclick="downloadText('wsResultText','result.txt', this)">Скачать .txt</button>
+            <button class="btn btn-ghost btn-sm" onclick="downloadResult('ws', this)">Скачать</button>
           </div>
         </div>
       </div>
@@ -334,6 +439,14 @@
   .json-string { color: #86efac; }
   .json-number { color: #fca5a5; }
   .json-boolean { color: #f0abfc; }
+  @keyframes pulse-rec {
+    0% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.2); opacity: 0.7; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  .mic-recording {
+    animation: pulse-rec 1s infinite;
+  }
 </style>
 <script src="/static/js/asr_settings.js"></script>
 <script>
@@ -356,7 +469,7 @@
   }
 
   function restoreExpertSettings() {
-    ['url','file','ws'].forEach(mode => {
+    ['url','file','mic','ws'].forEach(mode => {
       const s = ASRSettings.getFor(mode);
       const toggle = document.getElementById(mode + '_expert');
       if (toggle) toggle.checked = !!s.expert;
@@ -409,7 +522,7 @@
   }
 
   function initExpertListeners() {
-    ['url','file','ws'].forEach(mode => {
+    ['url','file','mic','ws'].forEach(mode => {
       const panel = document.getElementById(mode + '_expert_panel');
       if (panel) {
         panel.querySelectorAll('input, select').forEach(input => {

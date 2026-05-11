@@ -2,6 +2,12 @@
   'use strict';
 
   let wsChannelResults = [];
+  let micRecorder = null;
+  let micChunks = [];
+  let micBlob = null;
+  let micStream = null;
+  let micStartTime = null;
+  let micTimerInterval = null;
 
   function extractResultData(payload) {
     const payloads = Array.isArray(payload) ? payload : [payload];
@@ -127,6 +133,7 @@
       btnDialog.style.cursor = 'pointer';
     }
 
+    data.currentFormat = format;
     if (format === 'dialog') {
       pre.textContent = data.dialogText;
     } else if (format === 'text') {
@@ -136,11 +143,176 @@
     }
   };
 
+  window.downloadResult = function(mode, btn) {
+    UI.setLoading(btn, true);
+    const data = window._resultData?.[mode];
+    if (!data) { UI.setLoading(btn, false); return; }
+    const format = data.currentFormat || 'text';
+    let content, filename, mime;
+    if (format === 'raw') {
+      content = data.rawJson;
+      filename = 'result.json';
+      mime = 'application/json';
+    } else {
+      content = format === 'dialog' ? data.dialogText : data.textContent;
+      filename = 'result.txt';
+      mime = 'text/plain';
+    }
+    const blob = new Blob([content], {type: mime});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    setTimeout(() => UI.setLoading(btn, false), 500);
+  };
+
   function refreshWsResult() {
     if (wsChannelResults.length === 0) return;
     const payloads = wsChannelResults.map(c => c.payload);
     displayResult('ws', payloads);
   }
+
+  // --- Микрофон ---
+  function startRecording() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      UI.toast('Ваш браузер не поддерживает запись с микрофона', 'error');
+      return;
+    }
+    navigator.mediaDevices.enumerateDevices().then(devices => {
+      const audioInputs = devices.filter(d => d.kind === 'audioinput');
+      if (audioInputs.length === 0) {
+        UI.toast('Микрофон не обнаружен. Проверьте подключение аудио-устройства и разрешения браузера.', 'error');
+        return;
+      }
+      navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }).then(stream => {
+        micStream = stream;
+        micChunks = [];
+        micRecorder = new MediaRecorder(stream);
+        micRecorder.ondataavailable = e => { if (e.data.size > 0) micChunks.push(e.data); };
+        micRecorder.onstop = () => {
+          micBlob = new Blob(micChunks, { type: 'audio/webm' });
+          const url = URL.createObjectURL(micBlob);
+          const player = document.getElementById('micAudioPlayer');
+          player.src = url;
+          document.getElementById('micRecordingBlock').style.display = 'none';
+          document.getElementById('micPreviewBlock').style.display = 'block';
+          document.getElementById('btnMicSend').disabled = false;
+          clearInterval(micTimerInterval);
+          micTimerInterval = null;
+        };
+        micRecorder.start();
+        micStartTime = Date.now();
+        document.getElementById('micIdleBlock').style.display = 'none';
+        document.getElementById('micRecordingBlock').style.display = 'block';
+        document.getElementById('micRecDot').classList.add('mic-recording');
+        micTimerInterval = setInterval(() => {
+          const sec = Math.floor((Date.now() - micStartTime) / 1000);
+          const mm = String(Math.floor(sec / 60)).padStart(2, '0');
+          const ss = String(sec % 60).padStart(2, '0');
+          document.getElementById('micTimer').textContent = mm + ':' + ss;
+        }, 1000);
+      }).catch(err => {
+        let msg = 'Не удалось получить доступ к микрофону';
+        if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+          msg = 'Микрофон не найден. Убедитесь, что устройство подключено и браузеру разрешён доступ.';
+        } else if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          msg = 'Доступ к микрофону запрещён. Разрешите использование микрофона в настройках браузера.';
+        } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+          msg = 'Микрофон занят другим приложением. Закройте другие программы, использующие микрофон.';
+        } else if (err.name === 'SecurityError') {
+          msg = 'Доступ к микрофону заблокирован. Используйте HTTPS или localhost.';
+        }
+        UI.toast(msg + ' (' + err.message + ')', 'error');
+      });
+    }).catch(err => {
+      UI.toast('Не удалось проверить аудио-устройства: ' + err.message, 'error');
+    });
+  }
+  window.startRecording = startRecording;
+
+  function stopRecording() {
+    if (micRecorder && micRecorder.state !== 'inactive') {
+      micRecorder.stop();
+    }
+    if (micStream) {
+      micStream.getTracks().forEach(t => t.stop());
+    }
+    document.getElementById('micRecDot').classList.remove('mic-recording');
+  }
+  window.stopRecording = stopRecording;
+
+  function resetRecording() {
+    if (micRecorder && micRecorder.state !== 'inactive') {
+      micRecorder.stop();
+    }
+    if (micStream) {
+      micStream.getTracks().forEach(t => t.stop());
+    }
+    micRecorder = null;
+    micStream = null;
+    micBlob = null;
+    micChunks = [];
+    if (micTimerInterval) clearInterval(micTimerInterval);
+    micTimerInterval = null;
+    document.getElementById('micAudioPlayer').src = '';
+    document.getElementById('micIdleBlock').style.display = 'block';
+    document.getElementById('micRecordingBlock').style.display = 'none';
+    document.getElementById('micPreviewBlock').style.display = 'none';
+    document.getElementById('btnMicSend').disabled = true;
+    document.getElementById('micTimer').textContent = '00:00';
+    document.getElementById('micRecDot').classList.remove('mic-recording');
+  }
+  window.resetRecording = resetRecording;
+
+  function getMicParams() {
+    const expert = document.getElementById('mic_expert').checked;
+    const defaults = ASRSettings.getDefaults('mic');
+    const domBool = (id) => document.getElementById(id).checked;
+    const domInt = (id, def) => {
+      const v = parseInt(document.getElementById(id).value);
+      return isNaN(v) ? def : v;
+    };
+    const domFloat = (id, def) => {
+      const v = parseFloat(document.getElementById(id).value);
+      return isNaN(v) ? def : v;
+    };
+    const fastSpeech = domBool('mic_fast_speech');
+    const splitPhrases = domBool('mic_split_phrases');
+    const form = new FormData();
+    form.append('keep_raw', expert ? domBool('mic_keep_raw') : defaults.keep_raw);
+    form.append('do_echo_clearing', expert ? domBool('mic_do_echo_clearing') : defaults.do_echo_clearing);
+    form.append('do_dialogue', splitPhrases ? true : (expert ? domBool('mic_do_dialogue') : defaults.do_dialogue));
+    form.append('do_diarization', expert ? domBool('mic_do_diarization') : defaults.do_diarization);
+    form.append('do_punctuation', splitPhrases ? true : (expert ? domBool('mic_do_punctuation') : defaults.do_punctuation));
+    form.append('make_mono', expert ? domBool('mic_make_mono') : defaults.make_mono);
+    form.append('diar_vad_sensity', expert ? domInt('mic_diar_vad_sensity', defaults.diar_vad_sensity) : defaults.diar_vad_sensity);
+    form.append('do_auto_speech_speed_correction', fastSpeech ? true : (expert ? domBool('mic_do_auto_speech_speed_correction') : defaults.do_auto_speech_speed_correction));
+    form.append('speech_speed_correction_multiplier', expert ? domFloat('mic_speech_speed_correction_multiplier', defaults.speech_speed_correction_multiplier) : defaults.speech_speed_correction_multiplier);
+    form.append('use_batch', fastSpeech ? false : (expert ? domBool('mic_use_batch') : defaults.use_batch));
+    form.append('batch_size', expert ? domInt('mic_batch_size', defaults.batch_size) : defaults.batch_size);
+    return form;
+  }
+
+  async function sendMic() {
+    if (!micBlob) { UI.toast('Запишите аудио перед отправкой', 'warning'); return; }
+    const btn = document.getElementById('btnMicSend');
+    UI.setLoading(btn, true);
+    if (document.getElementById('mic_expert').checked && !validateExpert('mic')) {
+      UI.setLoading(btn, false); return;
+    }
+    const form = getMicParams();
+    form.append('file', micBlob, 'recording.webm');
+    try {
+      const resp = await Auth.apiFetch('/api/v1/asr/file', {method:'POST', body:form});
+      const data = await resp.json();
+      displayResult('mic', data);
+    } catch (e) {
+      UI.toast('Ошибка: ' + e.message, 'error');
+    } finally {
+      UI.setLoading(btn, false);
+    }
+  }
+  window.sendMic = sendMic;
 
   // --- Табы ---
   function switchTab(name) {
