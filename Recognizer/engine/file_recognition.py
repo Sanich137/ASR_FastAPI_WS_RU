@@ -10,15 +10,18 @@ from utils.resamppling import sync_resample_audiosegment
 from Recognizer.engine.stream_recognition import simple_recognise, recognise_w_speed_correction, simple_recognise_batch
 from Recognizer.engine.sentensizer import do_sensitizing
 from Recognizer.engine.echoe_clearing import remove_echo
-from Diarisation.diarazer import do_diarizing
+from Diarisation.diarazer import do_diarizing, do_diarizing_v1
+from utils.pre_start_init import posted_and_downloaded_audio
 
 logger = logging.getLogger(__name__)
 
 def process_file(session=None, recognizer=None, punctuator=None, diarizer=None, tmp_path=None, params=None):
     # Legacy adapter: поддержка старых роутов, передающих tmp_path + params
+    legacy_mode = False
     if session is None and tmp_path is not None and params is not None:
         session = FileRecognitionSession(params=params)
         session.tmp_path = tmp_path
+        legacy_mode = True
     elif session is None:
         raise TypeError("process_file() требует либо 'session', либо оба 'tmp_path' и 'params'")
 
@@ -46,6 +49,9 @@ def process_file(session=None, recognizer=None, punctuator=None, diarizer=None, 
             audio_input = AudioSegment.from_file(file_source).set_channels(1)
         else:
             audio_input = AudioSegment.from_file(file_source)
+
+        if legacy_mode:
+            posted_and_downloaded_audio[session.post_id] = audio_input
     except Exception as e:
         error_description += f"Error loading audio file: {e}"
         logger.error(error_description)
@@ -167,12 +173,20 @@ def process_file(session=None, recognizer=None, punctuator=None, diarizer=None, 
 
     if params.do_diarization:
         try:
-            result["diarized_data"] = asyncio.run(do_diarizing(
-                file_id=str(post_id),
-                asr_raw_data=session.collected_asr_res,
-                diar_vad_sensity=params.diar_vad_sensity,
-                diarizer=diarizer,
-            ))
+            if legacy_mode:
+                result["diarized_data"] = asyncio.run(do_diarizing(
+                    file_id=str(post_id),
+                    asr_raw_data=session.collected_asr_res,
+                    diar_vad_sensity=params.diar_vad_sensity,
+                    diarizer=diarizer,
+                ))
+            else:
+                result["diarized_data"] = asyncio.run(do_diarizing_v1(
+                    audio_segment=audio_input,
+                    asr_raw_data=session.collected_asr_res,
+                    diar_vad_sensity=params.diar_vad_sensity,
+                    diarizer=diarizer,
+                ))
         except Exception as e:
             logger.error(f"do_diarizing - {e}")
             error_description = f"do_diarizing - {e}"

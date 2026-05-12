@@ -1,4 +1,5 @@
 import datetime
+from pydub import AudioSegment
 from Diarisation.do_diarize import load_and_preprocess_audio
 from utils.pre_start_init import posted_and_downloaded_audio
 from collections import defaultdict
@@ -189,6 +190,38 @@ def match_asr_with_diarization(asr_data, diarization_data, min_overlap_ratio=0.5
         result[speaker].sort(key=lambda x: x['data']['replica_start'])
 
     return dict(result)
+
+async def do_diarizing_v1(
+        audio_segment: AudioSegment,
+        asr_raw_data,
+        diarizer,
+        num_speakers:int = -1,
+        filter_cutoff:int = 50,
+        filter_order:int = 10,
+        diar_vad_sensity: int = 3
+        ):
+    # Предобработка аудио.
+    # ВАЖНЫЙ момент. Мы диаризируем только последний канал.
+    audio_frames = await load_and_preprocess_audio(audio_segment.split_to_mono()[-1])
+
+    logger.debug("Старт процесса диаризации.")
+    st=datetime.datetime.now()
+    # Непосредственно получение временных меток речи
+    diar_result = await diarizer.diarize_and_merge(
+        audio_frames,
+        num_speakers=num_speakers,
+        filter_cutoff=filter_cutoff,
+        filter_order=filter_order,
+        vad_sensity=diar_vad_sensity
+    )
+
+    for r in diar_result:
+        logger.debug(f"Спикер {r['speaker']}: {r['start']:.2f} - {r['end']:.2f} сек")
+    logger.debug(f"Диаризация завершена за {(datetime.datetime.now()-st).total_seconds()} секунд")
+
+    # Построение структуры аналогично raw_data для дальнейшего построения диалога и вывод результата
+    return match_asr_with_diarization(asr_raw_data, diar_result)
+
 
 def group_words(words):
     if not words:
