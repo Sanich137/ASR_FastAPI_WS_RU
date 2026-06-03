@@ -1,4 +1,6 @@
+pytest
 setuptools
+pydantic_settings
 httpx~=0.28.1
 
 pathlib~=1.0.1
@@ -18,8 +20,6 @@ pydub~=0.25.1
 
 tqdm~=4.67.1
 psutil~=7.0.0
-
-
 
 
 librosa~=0.11.0
@@ -48,3 +48,15 @@ watchdog~=6.0.0
 onnx-asr == 0.10.2
 hf_xet
 onnxruntime
+
+starlette
+
+# For Auth / JWT
+pyjwt~=2.10.1
+bcrypt~=4.3.0
+email-validator
+
+# For DB (новый api/v1 + сессии ASR; апстрим забыл их в requirements)
+sqlalchemy~=2.0
+aiosqlite
+greenlet

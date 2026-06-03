@@ -1,13 +1,6 @@
 # -*- coding: utf-8 -*-
-from utils.do_logging import logger
-from utils.files_whatcher import start_file_watcher
-from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI
-import config
-import threading
-import gc
-
+from config import settings
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 paths = {
@@ -40,7 +33,7 @@ paths = {
 
     "punctuation_model_path": BASE_DIR / "models" / "sbert_punc_case_ru_onnx",
     "vad_model_path": BASE_DIR / "models" / "VAD_silero_v5" / "silero_vad.onnx",
-    "diar_speaker_model_path": BASE_DIR / "models" / "DIARISATION_model" / f"{config.DIAR_MODEL_NAME}",
+    "diar_speaker_model_path": BASE_DIR / "models" / "DIARISATION_model" / f"{settings.DIAR_MODEL_NAME}",
 
     "BASE_DIR": BASE_DIR,
     "test_file": BASE_DIR /'trash'/'111.wav',
@@ -59,30 +52,3 @@ audio_duration = defaultdict(float)
 ws_collected_asr_res = defaultdict()
 posted_and_downloaded_audio = defaultdict()
 
-# Устанавливаем новые пороги сборщика мусора
-gc.set_threshold(500,  # быстрые файлы было 700
-                 5,    # средне выживающие файлы было 10
-                 5)    # долгожители было 10.
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # on_start
-    logger.debug("Приложение FastAPI запущено")
-    global observer
-    if config.DO_LOCAL_FILE_RECOGNITIONS:
-        observer_thread = threading.Thread(
-            target=lambda: start_file_watcher(file_path=str(paths.get("local_recognition_folder"))),
-            daemon=True
-        )
-        observer_thread.start()
-        logger.info("File watcher started")
-
-    yield  # Здесь приложение работает
-
-app = FastAPI(lifespan=lifespan,
-              version="1.0",
-              docs_url='/docs',
-              root_path='/root',
-              title='ASR on SHERPA-ONNX'
-              )

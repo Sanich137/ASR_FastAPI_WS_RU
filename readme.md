@@ -238,6 +238,7 @@ sudo systemctl enable vosk_gpu
 свяжитесь со мной через [GitHub Issues](https://github.com/Sanich137/ASR_FastAPI_WS_RU_sherpa-onnx/issues) или [GitHub Discussions](https://github.com/Sanich137/ASR_FastAPI_WS_RU_sherpa-onnx/discussions)
 
 ## Работы
+- 12 мая 2026 года Реализован веб интерфейс. /asr для пользователя и /admin/login для администратора. (без функций реального управления) 
 - 24 декабря 2025 года - обновлён и объединён в один докерфайл.
 - 11 декабря 2025 года - добавлена батчинг и поддержка RTX для ctc и частично rnnt моделей. 
 - 05 декабря 2025 год - миграция с sherpa-onnx на onnx-asr.

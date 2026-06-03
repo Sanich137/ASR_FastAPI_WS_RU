@@ -1,9 +1,5 @@
-import asyncio
-
-from numpy.ma.core import count
-from sympy.physics.units import speed
-
-from utils.do_logging import logger
+import logging
+logger = logging.getLogger(__name__)
 
 # Парсим JSON
 def process_multi_tokens_vocab_output(input_json, time_shift = 0.0, multiplier=1):

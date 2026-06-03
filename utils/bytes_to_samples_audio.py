@@ -1,8 +1,7 @@
 import numpy as np
 from  time import perf_counter
 import logging
-
-import config
+from config import settings
 
 
 def get_np_array_samples_float32(audio_bytes: bytes, sample_width: int = 2) -> np.ndarray:
@@ -58,7 +57,7 @@ def get_np_array_samples_float32(audio_bytes: bytes, sample_width: int = 2) -> n
             f"Длина samples_float32: {len(samples_float32)}, min={np.min(samples_float32)}, max={np.max(samples_float32)}")
 
         end_timer = perf_counter()
-        logger.debug(f"Время на конвертацию аудио длинной {len(samples)/config.BASE_SAMPLE_RATE} сек. затрачено {(end_timer-timer_start)} сек.")
+        logger.debug(f"Время на конвертацию аудио длинной {len(samples)/settings.BASE_SAMPLE_RATE} сек. затрачено {(end_timer-timer_start)} сек.")
         return samples_float32
 
     except Exception as e:

@@ -1,0 +1,302 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Сессия — Админ-панель{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="flex items-center" style="margin-bottom:24px; gap:16px;">
+    <a href="javascript:history.back()" class="btn btn-ghost btn-sm">← Назад</a>
+    <h1 style="margin:0;">Детали сессии</h1>
+    <span id="sessionId" class="text-muted" style="margin-left:auto; font-family:monospace;"></span>
+  </div>
+
+  <div class="card" style="margin-bottom:24px;">
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:16px;">
+      <div class="form-group">
+        <label class="text-sm text-muted">ID</label>
+        <div id="dId" style="font-weight:600;"></div>
+      </div>
+      <div class="form-group">
+        <label class="text-sm text-muted">Тип</label>
+        <div id="dType" style="font-weight:600;"></div>
+      </div>
+      <div class="form-group">
+        <label class="text-sm text-muted">Статус</label>
+        <div id="dStatus"></div>
+      </div>
+      <div class="form-group">
+        <label class="text-sm text-muted">Пользователь</label>
+        <div id="dUser" class="text-muted">—</div>
+      </div>
+      <div class="form-group">
+        <label class="text-sm text-muted">Длительность аудио</label>
+        <div id="dAudioDuration" class="text-muted">—</div>
+      </div>
+      <div class="form-group">
+        <label class="text-sm text-muted">Длительность обработки</label>
+        <div id="dProcessingDuration" class="text-muted">—</div>
+      </div>
+      <div class="form-group">
+        <label class="text-sm text-muted">Стоимость</label>
+        <div id="dCost" class="text-muted">—</div>
+      </div>
+      <div class="form-group">
+        <label class="text-sm text-muted">Создана</label>
+        <div id="dCreated" class="text-muted">—</div>
+      </div>
+      <div class="form-group">
+        <label class="text-sm text-muted">Завершена</label>
+        <div id="dCompleted" class="text-muted">—</div>
+      </div>
+      <div class="form-group">
+        <label class="text-sm text-muted">IP</label>
+        <div id="dIp" class="text-muted">—</div>
+      </div>
+      <div class="form-group">
+        <label class="text-sm text-muted">User-Agent</label>
+        <div id="dUa" class="text-muted" style="word-break:break-all;">—</div>
+      </div>
+      <div class="form-group">
+        <label class="text-sm text-muted">Ошибка</label>
+        <div id="dError" class="text-muted" style="color:var(--color-danger);">—</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="flex items-center justify-between" style="margin-bottom:16px;">
+      <h3 style="margin:0;">Результат</h3>
+      <div class="flex gap-2">
+        <button class="btn btn-ghost btn-sm" onclick="copyResult()">Копировать</button>
+        <button class="btn btn-ghost btn-sm" id="btnDownload" onclick="downloadResult()">Скачать</button>
+      </div>
+    </div>
+    <div class="flex gap-2 mb-2" id="detailFormatButtons"></div>
+    <pre id="dResult" style="background:var(--color-bg); padding:16px; border-radius:var(--radius); overflow:auto; max-height:400px; font-size:12px; color:var(--color-text); white-space:pre-wrap; word-break:break-word;">—</pre>
+  </div>
+
+<style>
+  .json-key { color: #93c5fd; }
+  .json-string { color: #86efac; }
+  .json-number { color: #fca5a5; }
+  .json-boolean { color: #f0abfc; }
+</style>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const SESSION_ID = '{{ session_id }}';
+  let _session = null;
+
+  async function loadSession() {
+    try {
+      const resp = await Auth.apiFetch(`/api/v1/admin/sessions/${SESSION_ID}`);
+      if (!resp.ok) throw new Error();
+      _session = await resp.json();
+      renderSession();
+    } catch (e) {
+      UI.toast('Не удалось загрузить сессию', 'error');
+    }
+  }
+
+  function renderSession() {
+    if (!_session) return;
+    document.getElementById('sessionId').textContent = _session.id;
+    document.getElementById('dId').textContent = _session.id;
+    document.getElementById('dType').textContent = _session.session_type;
+    document.getElementById('dStatus').innerHTML = AdminUI.renderBadge(_session.status);
+    document.getElementById('dUser').textContent = _session.user_id || '—';
+    document.getElementById('dAudioDuration').textContent = AdminUI.renderDuration(_session.audio_duration_sec);
+    document.getElementById('dProcessingDuration').textContent = AdminUI.renderDuration(_session.processing_duration_sec);
+    document.getElementById('dCost').textContent = _session.cost != null ? _session.cost + ' ₽' : '—';
+    document.getElementById('dCreated').textContent = AdminUI.renderDate(_session.created_at);
+    document.getElementById('dCompleted').textContent = AdminUI.renderDate(_session.completed_at);
+    document.getElementById('dIp').textContent = _session.request_ip || '—';
+    document.getElementById('dUa').textContent = _session.user_agent || '—';
+    document.getElementById('dError').textContent = _session.error_message || '—';
+
+    if (_session.result_json) {
+      displayResultDetail(_session.result_json);
+    } else {
+      document.getElementById('dResult').textContent = 'Нет данных';
+    }
+  }
+
+  function highlightJson(json) {
+    if (typeof json !== 'string') json = JSON.stringify(json, null, 2);
+    return json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?)/g, function(match) {
+        let cls = 'json-string';
+        if (/:$/.test(match)) { cls = 'json-key'; match = match.slice(0, -1) + '</span>:'; return '<span class="' + cls + '">' + match; }
+        return '<span class="' + cls + '">' + match + '</span>';
+      })
+      .replace(/\b(true|false|null)\b/g, '<span class="json-boolean">$1</span>')
+      .replace(/\b(\d+\.?\d*)\b/g, '<span class="json-number">$1</span>');
+  }
+
+  function extractResultData(payload) {
+    const payloads = Array.isArray(payload) ? payload : [payload];
+    let hasDialog = false;
+    let dialogText = '';
+    let textContent = '';
+    let rawJson = '';
+
+    payloads.forEach((p, idx) => {
+      const prefix = payloads.length > 1 ? `=== Канал ${idx+1} ===\n` : '';
+      const sentenced = p.sentenced_data || p.data?.sentenced_data;
+
+      if (idx > 0) {
+        if (dialogText) dialogText += '\n\n';
+        if (textContent) textContent += '\n\n';
+        if (rawJson) rawJson += '\n\n';
+      }
+
+      rawJson += prefix + JSON.stringify(p, null, 2);
+
+      if (sentenced?.full_text_only) {
+        const ft = sentenced.full_text_only;
+        textContent += prefix + (Array.isArray(ft) ? ft.join('\n') : String(ft));
+      } else {
+        textContent += prefix + (sentenced?.raw_text_sentenced_recognition || p.data?.text || p.data?.raw_data?.channel_1?.map(x => x.data?.text).join('\n') || '');
+      }
+
+      const items = sentenced?.list_of_sentenced_recognitions;
+      if (items && items.length > 0) {
+        hasDialog = true;
+        if (dialogText) dialogText += '\n\n';
+        dialogText += prefix + items.map(item => {
+          const start = item.start != null ? item.start : (item.start_time || '');
+          const speaker = item.speaker != null ? `[${item.speaker}]` : '';
+          return `${speaker} ${start} - ${item.text || ''}`.trim();
+        }).join('\n');
+      }
+
+      const diarized = p.diarized_data || p.data?.diarized_data;
+      if (diarized && Array.isArray(diarized) && diarized.length > 0) {
+        hasDialog = true;
+        if (dialogText) dialogText += '\n\n';
+        dialogText += prefix + diarized.map(item => {
+          const start = item.start != null ? item.start : (item.start_time || '');
+          const speaker = item.speaker != null ? `[${item.speaker}]` : '';
+          return `${speaker} ${start} - ${item.text || ''}`.trim();
+        }).join('\n');
+      }
+    });
+
+    return { hasDialog, dialogText, textContent, rawJson };
+  }
+
+  function displayResultDetail(payload) {
+    const data = extractResultData(payload);
+    const pre = document.getElementById('dResult');
+    if (!pre) return;
+
+    let btnContainer = document.getElementById('detailFormatButtons');
+    if (!btnContainer) {
+      const card = pre.parentElement;
+      btnContainer = document.createElement('div');
+      btnContainer.className = 'flex gap-2 mb-2';
+      btnContainer.id = 'detailFormatButtons';
+      card.insertBefore(btnContainer, pre);
+    }
+    btnContainer.innerHTML = `
+      <button class="btn btn-ghost btn-sm" id="detail_btn_dialog" onclick="switchResultFormatDetail('dialog')">DIALOG</button>
+      <button class="btn btn-ghost btn-sm" id="detail_btn_text" onclick="switchResultFormatDetail('text')">TEXT</button>
+      <button class="btn btn-ghost btn-sm" id="detail_btn_raw" onclick="switchResultFormatDetail('raw')">RAW</button>
+    `;
+
+    window._resultData = data;
+    const defaultFormat = data.hasDialog ? 'dialog' : 'text';
+    switchResultFormatDetail(defaultFormat);
+  }
+
+  function switchResultFormatDetail(format) {
+    const data = window._resultData;
+    if (!data) return;
+
+    const pre = document.getElementById('dResult');
+    const btnDialog = document.getElementById('detail_btn_dialog');
+    const btnText = document.getElementById('detail_btn_text');
+    const btnRaw = document.getElementById('detail_btn_raw');
+
+    [btnDialog, btnText, btnRaw].forEach(btn => {
+      if (btn) {
+        btn.style.opacity = '0.5';
+        btn.style.borderColor = 'transparent';
+      }
+    });
+
+    const activeBtn = { dialog: btnDialog, text: btnText, raw: btnRaw }[format];
+    if (activeBtn) {
+      activeBtn.style.opacity = '1';
+      activeBtn.style.borderColor = 'var(--color-primary)';
+    }
+
+    if (btnDialog && !data.hasDialog) {
+      btnDialog.disabled = true;
+      btnDialog.style.opacity = '0.3';
+      btnDialog.style.cursor = 'not-allowed';
+    } else if (btnDialog) {
+      btnDialog.disabled = false;
+      btnDialog.style.cursor = 'pointer';
+    }
+
+    data.currentFormat = format;
+    if (format === 'dialog') {
+      pre.textContent = data.dialogText;
+    } else if (format === 'text') {
+      pre.textContent = data.textContent;
+    } else {
+      pre.innerHTML = highlightJson(data.rawJson);
+    }
+  }
+
+  function copyResult() {
+    const data = window._resultData;
+    if (!data) { UI.toast('Нет данных для копирования', 'warning'); return; }
+    const format = data.currentFormat || 'text';
+    let text;
+    if (format === 'raw') {
+      text = data.rawJson;
+    } else {
+      text = format === 'dialog' ? data.dialogText : data.textContent;
+    }
+    navigator.clipboard.writeText(text).then(() => {
+      UI.toast('Скопировано', 'success');
+    }).catch(() => {
+      UI.toast('Не удалось скопировать', 'error');
+    });
+  }
+
+  function downloadResult() {
+    const data = window._resultData;
+    if (!data) {
+      UI.toast('Нет данных для скачивания', 'warning');
+      return;
+    }
+    const btn = document.getElementById('btnDownload');
+    UI.setLoading(btn, true);
+    const format = data.currentFormat || 'text';
+    let content, filename, mime;
+    if (format === 'raw') {
+      content = data.rawJson;
+      filename = 'session_' + SESSION_ID + '.json';
+      mime = 'application/json';
+    } else {
+      content = format === 'dialog' ? data.dialogText : data.textContent;
+      filename = 'session_' + SESSION_ID + '.txt';
+      mime = 'text/plain';
+    }
+    try {
+      const blob = new Blob([content], {type: mime});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+    } finally {
+      UI.setLoading(btn, false);
+    }
+  }
+
+  loadSession();
+</script>
+{% endblock %}

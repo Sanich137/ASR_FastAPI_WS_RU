@@ -1,0 +1,16 @@
+venv/
+.venv/
+models/
+__pycache__/
+*.py[cod]
+.git/
+logs/
+trash/
+bench/
+*.log
+*.db
+asr_local.db
+.idea/
+.dockerignore
+local_asr/to_asr/*
+local_asr/after_asr/*

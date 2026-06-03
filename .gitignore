@@ -4,7 +4,7 @@
 *.ogg
 *.onnx
 *.m4a
-*.md
+*.history.md
 /.venv/
 /venv/
 /models/vosk-model-ru/
@@ -17,3 +17,16 @@
 /models/sherpa-onnx-whisper-small/
 /trash/test_data.py
 /.idea/
+.aider*
+/.continue/
+.env
+
+# runtime / cache / dev
+__pycache__/
+*.py[cod]
+*.db
+asr_local.db
+/logs/
+/bench/
+/models/hub/
+/models/sbert_punc_case_ru_onnx/

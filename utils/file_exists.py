@@ -1,5 +1,6 @@
 from pathlib import Path
-from utils.do_logging import logger
+import logging
+logger = logging.getLogger(__name__)
 
 
 def assert_file_exists(filename_path: Path):

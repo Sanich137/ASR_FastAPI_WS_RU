@@ -1,10 +1,10 @@
-from utils.do_logging import logger
 import numpy as np
 import asyncio
-import config
-from Punctuation import sbertpunc
+from config import settings
+import logging
+logger = logging.getLogger(__name__)
 
-async def do_sensitizing(input_asr_json: str, do_punctuation: bool = False):
+async def do_sensitizing(input_asr_json: str, do_punctuation: bool = False,  punctuator=None):
     """
     :param do_punctuation: Если True, то производит пунктуацию и капитализацию над собранными в предложения выражения.
     :param input_asr_json: {"channel_{n_channel + 1}":
@@ -64,7 +64,7 @@ async def do_sensitizing(input_asr_json: str, do_punctuation: bool = False):
                     # Обработка случая с одним словом
                     text = words[0].get('word')
                     if do_punctuation:
-                        text = await sbertpunc.punctuate(text)
+                        text = await punctuator.punctuate(text)
 
                     sentence_element.append({
                       "start": start_time,
@@ -81,7 +81,7 @@ async def do_sensitizing(input_asr_json: str, do_punctuation: bool = False):
                         between_words_delta.append(word.get('end') - end_time)
                         end_time = word.get('end')
 
-                    words_mean = np.percentile(between_words_delta, config.BETWEEN_WORDS_PERCENTILE)
+                    words_mean = np.percentile(between_words_delta, settings.BETWEEN_WORDS_PERCENTILE)
                     logger.debug(f"words_mean = {words_mean}")
 
                     start_time = 0
@@ -108,7 +108,7 @@ async def do_sensitizing(input_asr_json: str, do_punctuation: bool = False):
 
                         else:
                             if do_punctuation:
-                                text = await sbertpunc.punctuate(' '.join(str(word) for word in sentences))
+                                text = await punctuator.punctuate(' '.join(str(word) for word in sentences))
                             else:
                                 text = ' '.join(str(word) for word in sentences)
 
@@ -128,7 +128,7 @@ async def do_sensitizing(input_asr_json: str, do_punctuation: bool = False):
 
                     if do_punctuation:
 
-                        text = await sbertpunc.punctuate(' '.join(str(word) for word in sentences))
+                        text = await punctuator.punctuate(' '.join(str(word) for word in sentences))
                     else:
                         text = ' '.join(str(word) for word in sentences)
 
@@ -143,7 +143,7 @@ async def do_sensitizing(input_asr_json: str, do_punctuation: bool = False):
 
             if do_punctuation:
                 # Тут он текст разделит сам.
-                one_text_only = str(await sbertpunc.punctuate(one_text_only))
+                one_text_only = str(await punctuator.punctuate(one_text_only))
 
             text_only.append(one_text_only)
 

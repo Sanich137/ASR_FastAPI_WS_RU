@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>{% block title %}ASR Сервис{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/design-system.css">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <script src="/static/js/auth.js"></script>
+  <script src="/static/js/ui.js"></script>
+  <nav style="background:var(--color-surface);border-bottom:1px solid var(--color-border);padding:12px 0;">
+    <div class="container flex items-center justify-between">
+      <a href="/" style="font-weight:700;color:var(--color-text);text-decoration:none;">ASR</a>
+      <div class="flex gap-4 items-center" id="nav-links"></div>
+    </div>
+  </nav>
+
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+
+  <script>
+    async function logout() {
+      try {
+        await fetch('/api/v1/auth/logout', {method:'POST', credentials:'include'});
+      } catch (e) {}
+      Auth.clearAuth();
+      renderNav();
+      window.location.href = '/login';
+    }
+
+    function renderNav() {
+      const nav = document.getElementById('nav-links');
+      if (!nav) return;
+      if (Auth.getAccessToken()) {
+        nav.innerHTML = `
+          <a href="/dashboard" class="text-sm text-muted" style="text-decoration:none;">Dashboard</a>
+          <a href="/asr" class="text-sm text-muted" style="text-decoration:none;">ASR</a>
+          <a href="/history" class="text-sm text-muted" style="text-decoration:none;">История</a>
+          <a href="/subscription" class="text-sm text-muted" style="text-decoration:none;">Подписка</a>
+          <a href="/profile" class="text-sm text-muted" style="text-decoration:none;">Профиль</a>
+          <a href="/api-keys" class="text-sm text-muted" style="text-decoration:none;">API-ключи</a>
+          <button class="btn btn-ghost btn-sm" onclick="logout()">Выйти</button>
+        `;
+      } else {
+        nav.innerHTML = `
+          <a href="/asr" class="text-sm text-muted" style="text-decoration:none;">ASR</a>
+          <a href="/history" class="text-sm text-muted" style="text-decoration:none;">История</a>
+          <a href="/login" class="text-sm text-muted" style="text-decoration:none;">Вход</a>
+          <a href="/register" class="btn btn-primary btn-sm" style="text-decoration:none;">Регистрация</a>
+        `;
+      }
+    }
+
+    {% if access_token %}
+      Auth.setAccessToken('{{ access_token }}');
+    {% endif %}
+    renderNav();
+
+    // Восстановление сессии из refresh-cookie при загрузке страницы
+    if (!Auth.getAccessToken()) {
+      fetch('/api/v1/auth/refresh', {method:'POST', credentials:'include'})
+        .then(r => r.ok ? r.json() : Promise.reject())
+        .then(data => {
+          if (data.access_token) {
+            Auth.setAccessToken(data.access_token);
+            renderNav();
+          }
+        })
+        .catch(() => {});
+    }
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,47 @@
+# Локальный ТЕСТОВЫЙ образ новой архитектуры (api/v1 + services): собирается из рабочего
+# дерева (COPY), модели монтируются с хоста. Прод-образ - Docker/Dockerfile.
+#
+# Сборка из КОРНЯ репозитория:
+#   CPU:  docker build -f Docker/Dockerfile.local -t asr-local .
+#   GPU:  docker build -f Docker/Dockerfile.local --build-arg PROVIDER=CUDA -t asr-local .
+FROM python:3.12-slim-bullseye
+
+# build-essential/cmake/libboost/libeigen нужны для сборки kenlm (зависимость T-one)
+RUN apt-get update && apt-get install -y \
+    git git-lfs ffmpeg curl ca-certificates jq \
+    build-essential cmake libboost-all-dev libeigen3-dev \
+    && rm -rf /var/lib/apt/lists/*
+RUN git lfs install
+
+# Провайдер: CPU (по умолч.) | CUDA. Для CUDA меняем onnxruntime -> onnxruntime-gpu + cupy.
+ARG PROVIDER=CPU
+COPY requirements.txt /tmp/req.txt
+RUN if [ "$PROVIDER" = "CUDA" ] || [ "$PROVIDER" = "TENSORRT" ]; then \
+        sed -i 's#^onnxruntime\s*$#onnxruntime-gpu[cuda,cudnn]==1.23.2#' /tmp/req.txt && \
+        echo "cupy-cuda12x==13.5.1" >> /tmp/req.txt ; \
+    fi
+RUN pip install --no-cache-dir -r /tmp/req.txt
+
+# T-one (потоковый путь /api/v1/asr/ws-stream): --no-deps, затем зависимости (kenlm соберётся)
+RUN pip install --no-cache-dir --no-deps "git+https://github.com/voicekit-team/T-one.git" && \
+    pip install --no-cache-dir pyctcdecode kenlm miniaudio
+
+# Для CUDA фиксируем cuDNN как в проде
+RUN if [ "$PROVIDER" = "CUDA" ] || [ "$PROVIDER" = "TENSORRT" ]; then \
+        pip install --no-cache-dir --force-reinstall nvidia-cudnn-cu12==9.6.0.74 ; \
+    fi
+
+# Код приложения - из локального рабочего дерева (.dockerignore исключает venv/models/.git)
+COPY . /ASR_FastAPI_WS_RU/
+
+# Каталоги, обязательные на старте (логи; иначе TimedRotatingFileHandler падает)
+RUN mkdir -p /ASR_FastAPI_WS_RU/logs /ASR_FastAPI_WS_RU/local_asr/to_asr /ASR_FastAPI_WS_RU/local_asr/after_asr
+
+ENV PYTHONPATH=/ASR_FastAPI_WS_RU \
+    HF_HOME=/ASR_FastAPI_WS_RU/models \
+    IS_PROD=1 \
+    LOGGING_LEVEL=INFO
+
+WORKDIR /ASR_FastAPI_WS_RU
+EXPOSE 49153
+CMD ["python3", "main.py"]

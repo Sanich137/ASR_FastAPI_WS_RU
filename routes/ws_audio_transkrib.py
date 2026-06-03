@@ -1,39 +1,55 @@
 from pydub import AudioSegment
 
 import ujson
-import config
+import base64
+import logging
+from config import settings
 import uuid
 from io import BytesIO
-import subprocess
 
-
-from utils.pre_start_init import app
-from fastapi import WebSocket, WebSocketException
-from utils.do_logging import logger
+from fastapi import APIRouter, WebSocket
+from services.ws_protocol import normalize_to_ws_message
+from models.ws_models import WSConfigMessage, WSAudioMessage, WSEosMessage
 from utils.chunk_doing import find_last_speech_position
 from utils.pre_start_init import audio_buffer, audio_overlap, audio_to_asr, audio_duration,ws_collected_asr_res
 from utils.send_messages import send_messages
 from utils.tokens_to_Result import process_single_token_vocab_output
 from utils.resamppling import async_resample_audiosegment
 
+from fastapi import Depends
+from Recognizer import get_recognizer, Recognizer
+
 from Recognizer.engine.sentensizer import do_sensitizing
 from Recognizer.engine.stream_recognition import simple_recognise
+from Punctuation import get_punctuator, SbertPuncCaseOnnx
+
+# Todo: Этот роут — legacy. Удалить после полного перехода клиентов на /api/v1/asr/ws.
+# Сохраняем "frozen" для обратной совместимости; не использовать в новых интеграциях.
+
+router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
-@app.websocket("/ws")
-async def websocket(ws: WebSocket):
+@router.websocket("/ws")
+async def websocket(ws: WebSocket,
+                    recognizer: Recognizer = Depends(get_recognizer),
+                    punctuator: SbertPuncCaseOnnx = Depends(get_punctuator),
+                    ):
     wait_null_answers=True
     client_id = uuid.uuid4()
+    logger.warning(
+        "Legacy WebSocket endpoint /ws is deprecated. Use /api/v1/asr/ws instead.",
+    )
     logger.debug(f'Принят новый сокет id = {client_id}')
-    audio_buffer[client_id] = AudioSegment.silent(1, frame_rate=config.BASE_SAMPLE_RATE)
-    audio_overlap[client_id] = AudioSegment.silent(1, frame_rate=config.BASE_SAMPLE_RATE)
+    audio_buffer[client_id] = AudioSegment.silent(1, frame_rate=settings.BASE_SAMPLE_RATE)
+    audio_overlap[client_id] = AudioSegment.silent(1, frame_rate=settings.BASE_SAMPLE_RATE)
     audio_duration[client_id] = 0
     audio_to_asr[client_id] = list()
     ws_collected_asr_res[client_id] = {f"channel_{1}": list()}
     do_dialogue = False
     do_punctuation = False
     audio_format = 'raw'
-    sample_rate = config.BASE_SAMPLE_RATE  # Если не получен фреймрейт в конфиге сокета, по попытается принять с конфигом модели.
+    sample_rate = settings.BASE_SAMPLE_RATE  # Если не получен фреймрейт в конфиге сокета, по попытается принять с конфигом модели.
     sentenced_data = None
     error_description = None
 
@@ -49,35 +65,40 @@ async def websocket(ws: WebSocket):
 
         if isinstance(message, dict) and message.get('text'):
             try:
-                if message.get('text') and 'config' in message.get('text'):
-                    json_cfg = ujson.loads(message.get('text'))['config']
-                    audio_format = json_cfg.get("audio_format", 'pcm16')
-                    sample_rate = json_cfg.get('sample_rate')
-                    wait_null_answers = json_cfg.get('wait_null_answers', wait_null_answers)
-                    do_dialogue = json_cfg.get("do_dialogue", False)
-                    do_punctuation = json_cfg.get("do_punctuation", False)
-                    try:
-                        channel_name = message.get('text').get("channelName")
-                    except Exception as e:
-                        channel_name = "Null"
-                        logger.debug("ChannelName not parsed")
-                    logger.info(f"Task received, config -  {message.get('text')}")
+                # Автодетект протокола: понимает legacy ({config}/{eof}) и новый ({type:...})
+                canonical = normalize_to_ws_message(message.get('text'))
+                if isinstance(canonical, WSConfigMessage):
+                    audio_format = canonical.audio_format
+                    sample_rate = canonical.sample_rate
+                    wait_null_answers = canonical.wait_null_answers
+                    do_dialogue = canonical.do_dialogue
+                    do_punctuation = canonical.do_punctuation
+                    channel_name = canonical.channel_name or "Null"
+                    logger.info(f"Task received, config - sr={sample_rate}, fmt={audio_format}, ch={channel_name}")
                     continue
-
-                elif message.get('text') and 'eof' in message.get('text'):
-                    logger.info(f"EOF received in channel {channel_name}")
+                elif isinstance(canonical, WSEosMessage):
+                    logger.info(f"EOF/EOS received in channel {channel_name}")
                     break
+                elif isinstance(canonical, WSAudioMessage) and canonical.audio_base64:
+                    # Новый протокол с base64-аудио -> превращаем в бинарный кадр, обрабатываем ниже
+                    message = {'bytes': base64.b64decode(canonical.audio_base64)}
                 else:
-                    logger.error(f"Can`t recognise  text part of  message {message.get('text')} in channel {channel_name}")
-
+                    logger.error(f"Can`t recognise text message {message.get('text')} in channel {channel_name}")
+                    continue
             except Exception as e:
                 logger.error(f'Error text message compiling. Message:{message} - error:{e} in channel {channel_name}')
-        elif isinstance(message, dict) and message.get('bytes'):
+                continue
+
+        if isinstance(message, dict) and message.get('bytes'):
             try:
                 # Получаем новый чанк с данными
                 chunk = message.get('bytes')
 
                 if audio_format == 'pcm16':
+                    # Проверяем и добавляем недостающие нулевые байты в чанки.
+                    if len(chunk) % 2 != 0:
+                        chunk += bytes(2 - (len(chunk) % 2))
+
                     # Переводим чанк в объект Audiosegment
                     audiosegment_chunk = AudioSegment(
                         chunk,
@@ -85,6 +106,7 @@ async def websocket(ws: WebSocket):
                         sample_width = 2,   # Ширина сэмпла (2 байта для int16)
                         channels = 1        # Количество каналов. По умолчанию - 1, Моно.
                     )
+
                 else:
                     try:
                         buffer = BytesIO(chunk)
@@ -98,26 +120,26 @@ async def websocket(ws: WebSocket):
                         logger.debug(f"Чанк принят и распознан in channel {channel_name}")
 
                 # Приводим фреймрейт к фреймрейту модели
-                if audiosegment_chunk.frame_rate != config.BASE_SAMPLE_RATE:
-                    audiosegment_chunk = await async_resample_audiosegment(audiosegment_chunk, config.BASE_SAMPLE_RATE)
+                if audiosegment_chunk.frame_rate != settings.BASE_SAMPLE_RATE:
+                    audiosegment_chunk = await async_resample_audiosegment(audiosegment_chunk, settings.BASE_SAMPLE_RATE)
 
                 if audiosegment_chunk.channels != 1:
                     audiosegment_chunk = audiosegment_chunk.set_channels(1)
-
                 # Копим буфер
                 audio_buffer[client_id] += audiosegment_chunk
 
                 # Накопили больше нормы
-                if (audio_overlap[client_id]+audio_buffer[client_id]).duration_seconds >= config.MAX_OVERLAP_DURATION:
+                if (audio_overlap[client_id]+audio_buffer[client_id]).duration_seconds >= settings.MAX_OVERLAP_DURATION:
                     # Проверяем новый чанк перед объединением (там же режем хвост и добавляем его при необходимости)
                     await find_last_speech_position(client_id, is_last_chunk=False)
+
                 else:
                     continue
             except Exception as e:
                 logger.error(f"AcceptWaveform error - {e} in channel {channel_name}")
             else:
                 try:
-                    asr_result = await simple_recognise(audio_to_asr[client_id][-1])
+                    asr_result = await simple_recognise(audio_to_asr[client_id][-1], recognizer=recognizer)
                     asr_result_words = process_single_token_vocab_output(asr_result, audio_duration[client_id])
                     audio_duration[client_id] += audio_to_asr[client_id][-1].duration_seconds
                     logger.debug(asr_result_words)
@@ -191,7 +213,7 @@ async def websocket(ws: WebSocket):
             last_result = None
             error_description = f"Ошибка дополнения тишиной последнего чанка - {e} in channel {channel_name}"
         else:
-            last_asr_result_w_conf = await simple_recognise(audio_to_asr[client_id][-1])
+            last_asr_result_w_conf = await simple_recognise(audio_to_asr[client_id][-1], recognizer=recognizer)
             last_result = process_single_token_vocab_output(last_asr_result_w_conf, audio_duration[client_id])
             logger.debug(f'Последний результат {last_result.get("data").get("text")} in channel {channel_name}')
 
@@ -215,7 +237,7 @@ async def websocket(ws: WebSocket):
 
         if do_dialogue:
             try:
-                sentenced_data = await do_sensitizing(ws_collected_asr_res[client_id], do_punctuation)
+                sentenced_data = await do_sensitizing(ws_collected_asr_res[client_id], do_punctuation, punctuator=punctuator)
             except Exception as e:
                 logger.error(f"await do_sensitizing - {e}")
                 error_description = f"do_sensitizing - {e}"

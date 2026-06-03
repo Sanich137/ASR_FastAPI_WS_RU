@@ -1,0 +1,331 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Пользователь — Админ-панель{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="flex items-center" style="margin-bottom:24px; gap:16px;">
+    <a href="/admin/users" class="btn btn-ghost btn-sm">← Назад</a>
+    <h1 style="margin:0;">Пользователь</h1>
+    <span id="userEmail" class="text-muted" style="margin-left:auto;"></span>
+  </div>
+
+  <div class="card" style="margin-bottom:24px;">
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:16px;">
+      <div class="form-group">
+        <label class="text-sm text-muted">Email</label>
+        <div id="dEmail" style="font-weight:600;"></div>
+      </div>
+      <div class="form-group">
+        <label class="text-sm text-muted">Full Name</label>
+        <input class="input" id="dFullName" type="text">
+      </div>
+      <div class="form-group">
+        <label class="text-sm text-muted">Роль</label>
+        <select class="input" id="dRole">
+          <option value="user">User</option>
+          <option value="admin">Admin</option>
+          <option value="superadmin">Superadmin</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="text-sm text-muted">Статус</label>
+        <label class="flex items-center gap-2" style="cursor:pointer;">
+          <input type="checkbox" id="dActive">
+          <span class="text-sm">Активен</span>
+        </label>
+      </div>
+      <div class="form-group">
+        <label class="text-sm text-muted">Telegram ID</label>
+        <div id="dTelegram" class="text-muted">—</div>
+      </div>
+      <div class="form-group">
+        <label class="text-sm text-muted">Дата регистрации</label>
+        <div id="dCreated" class="text-muted">—</div>
+      </div>
+      <div class="form-group">
+        <label class="text-sm text-muted">Последний вход</label>
+        <div id="dLastLogin" class="text-muted">—</div>
+      </div>
+    </div>
+
+    <div class="flex items-center" style="margin-top:16px; gap:8px;">
+      <button class="btn btn-primary" id="btnSave" onclick="saveUser()">Сохранить изменения</button>
+      <button class="btn btn-ghost" id="btnImpersonate" onclick="impersonateUser()" style="display:none;">Войти как пользователь</button>
+      <button class="btn btn-danger" id="btnBlock" onclick="toggleBlock()">Заблокировать</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="flex items-center" style="border-bottom:1px solid var(--color-border); margin-bottom:16px;">
+      <button class="tab-btn active" onclick="switchTab('sessions')" id="tab-sessions">Сессии</button>
+      <button class="tab-btn" onclick="switchTab('subscriptions')" id="tab-subscriptions">Подписки</button>
+    </div>
+
+    <div id="panel-sessions">
+      <table id="sessionsTable" style="width:100%;border-collapse:collapse;">
+        <thead>
+          <tr style="border-bottom:1px solid var(--color-border); text-align:left;">
+            <th style="padding:8px;">ID</th>
+            <th style="padding:8px;">Тип</th>
+            <th style="padding:8px;">Статус</th>
+            <th style="padding:8px;">Длительность</th>
+            <th style="padding:8px;">Создана</th>
+            <th style="padding:8px;">Завершена</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td colspan="6" style="padding:16px;">
+            <div class="skeleton" style="height:24px; margin-bottom:8px;"></div>
+            <div class="skeleton" style="height:24px;"></div>
+          </td></tr>
+        </tbody>
+      </table>
+      <div id="sessionsEmpty" style="display:none; padding:24px; text-align:center; color:var(--color-muted);">Нет сессий</div>
+    </div>
+
+    <div id="panel-subscriptions" style="display:none;">
+      <table id="subsTable" style="width:100%;border-collapse:collapse;">
+        <thead>
+          <tr style="border-bottom:1px solid var(--color-border); text-align:left;">
+            <th style="padding:8px;">ID</th>
+            <th style="padding:8px;">Тариф</th>
+            <th style="padding:8px;">Статус</th>
+            <th style="padding:8px;">Начало</th>
+            <th style="padding:8px;">Окончание</th>
+            <th style="padding:8px;">Auto-renew</th>
+            <th style="padding:8px;">Действия</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td colspan="7" style="padding:16px;">
+            <div class="skeleton" style="height:24px; margin-bottom:8px;"></div>
+            <div class="skeleton" style="height:24px;"></div>
+          </td></tr>
+        </tbody>
+      </table>
+      <div id="subsEmpty" style="display:none; padding:24px; text-align:center; color:var(--color-muted);">Нет подписок</div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .tab-btn { background:none; border:none; color:var(--color-muted); padding:12px 16px; cursor:pointer; border-bottom:2px solid transparent; font-size:14px; }
+  .tab-btn.active { color:var(--color-primary); border-bottom-color:var(--color-primary); }
+  tr.clickable { cursor:pointer; }
+  tr.clickable:hover { background:rgba(148,163,184,0.08); }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const USER_ID = '{{ user_id }}';
+  let _user = null;
+
+  async function loadUser() {
+    try {
+      const resp = await Auth.apiFetch(`/api/v1/admin/users/${USER_ID}`);
+      if (!resp.ok) throw new Error();
+      _user = await resp.json();
+      renderUser();
+    } catch (e) {
+      UI.toast('Не удалось загрузить пользователя', 'error');
+    }
+  }
+
+  function renderUser() {
+    if (!_user) return;
+    document.getElementById('userEmail').textContent = _user.email;
+    document.getElementById('dEmail').textContent = _user.email;
+    document.getElementById('dFullName').value = _user.full_name || '';
+    document.getElementById('dRole').value = _user.role;
+    document.getElementById('dActive').checked = _user.is_active;
+    document.getElementById('dTelegram').textContent = _user.telegram_id || '—';
+    document.getElementById('dCreated').textContent = AdminUI.renderDate(_user.created_at);
+    document.getElementById('dLastLogin').textContent = AdminUI.renderDate(_user.last_login_at);
+
+    const btnBlock = document.getElementById('btnBlock');
+    btnBlock.textContent = _user.is_active ? 'Заблокировать' : 'Разблокировать';
+    btnBlock.className = _user.is_active ? 'btn btn-danger' : 'btn btn-success';
+  }
+
+  async function saveUser() {
+    const payload = {
+      full_name: document.getElementById('dFullName').value.trim(),
+      role: document.getElementById('dRole').value,
+      is_active: document.getElementById('dActive').checked,
+    };
+    const btn = document.getElementById('btnSave');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>';
+    try {
+      const resp = await Auth.apiFetch(`/api/v1/admin/users/${USER_ID}`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      if (!resp.ok) throw new Error();
+      UI.toast('Изменения сохранены', 'success');
+      _user = await resp.json();
+      renderUser();
+    } catch (e) {
+      UI.toast('Не удалось сохранить изменения', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Сохранить изменения';
+    }
+  }
+
+  async function impersonateUser() {
+    try {
+      const resp = await Auth.apiFetch(`/api/v1/admin/users/${USER_ID}/impersonate`, {method: 'POST'});
+      if (!resp.ok) throw new Error();
+      const data = await resp.json();
+      Auth.setAccessToken(data.access_token);
+      window.open('/dashboard', '_blank');
+      UI.toast('Сессия открыта в новой вкладке', 'success');
+    } catch (e) {
+      UI.toast('Не удалось войти как пользователь', 'error');
+    }
+  }
+
+  function toggleBlock() {
+    const action = _user.is_active ? 'Заблокировать' : 'Разблокировать';
+    const text = _user.is_active
+      ? `Заблокировать пользователя ${_user.email}? Он потеряет доступ ко всем сервисам, данные сохранятся.`
+      : `Разблокировать пользователя ${_user.email}?`;
+    UI.confirmDialog(action, text, async () => {
+      try {
+        if (_user.is_active) {
+          const resp = await Auth.apiFetch(`/api/v1/admin/users/${USER_ID}`, {method: 'DELETE'});
+          if (!resp.ok) throw new Error();
+          UI.toast('Пользователь заблокирован', 'success');
+        } else {
+          const resp = await Auth.apiFetch(`/api/v1/admin/users/${USER_ID}`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({is_active: true})
+          });
+          if (!resp.ok) throw new Error();
+          UI.toast('Пользователь разблокирован', 'success');
+        }
+        loadUser();
+      } catch (e) {
+        UI.toast('Не удалось изменить статус', 'error');
+      }
+    });
+  }
+
+  async function checkSuperadmin() {
+    try {
+      const resp = await Auth.apiFetch('/api/v1/auth/me');
+      if (!resp.ok) return;
+      const me = await resp.json();
+      if (me.role === 'superadmin') {
+        document.getElementById('btnImpersonate').style.display = 'inline-flex';
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  function switchTab(name) {
+    document.getElementById('panel-sessions').style.display = name === 'sessions' ? 'block' : 'none';
+    document.getElementById('panel-subscriptions').style.display = name === 'subscriptions' ? 'block' : 'none';
+    document.getElementById('tab-sessions').classList.toggle('active', name === 'sessions');
+    document.getElementById('tab-subscriptions').classList.toggle('active', name === 'subscriptions');
+    if (name === 'sessions' && !window._sessionsLoaded) { window._sessionsLoaded = true; loadSessions(); }
+    if (name === 'subscriptions' && !window._subsLoaded) { window._subsLoaded = true; loadSubscriptions(); }
+  }
+
+  async function loadSessions() {
+    try {
+      const resp = await Auth.apiFetch(`/api/v1/admin/users/${USER_ID}/sessions?limit=20`);
+      if (!resp.ok) throw new Error();
+      const data = await resp.json();
+      const tbody = document.querySelector('#sessionsTable tbody');
+      if (!data.length) {
+        tbody.innerHTML = '';
+        document.getElementById('sessionsEmpty').style.display = 'block';
+        return;
+      }
+      document.getElementById('sessionsEmpty').style.display = 'none';
+      tbody.innerHTML = data.map(s => `
+        <tr class="clickable" style="border-bottom:1px solid var(--color-border); cursor:pointer;" data-session-id="${AdminUI.escapeHtml(s.id)}">
+          <td style="padding:8px;">${AdminUI.escapeHtml(s.id)}</td>
+          <td style="padding:8px;">${AdminUI.escapeHtml(s.session_type)}</td>
+          <td style="padding:8px;">${AdminUI.renderBadge(s.status)}</td>
+          <td style="padding:8px;">${AdminUI.renderDuration(s.audio_duration_sec)}</td>
+          <td style="padding:8px;">${AdminUI.renderDate(s.created_at)}</td>
+          <td style="padding:8px;">${AdminUI.renderDate(s.completed_at)}</td>
+        </tr>
+      `).join('');
+      tbody.querySelectorAll('tr[data-session-id]').forEach(row => {
+        row.addEventListener('click', () => {
+          window.location.href = '/admin/sessions/' + encodeURIComponent(row.dataset.sessionId);
+        });
+      });
+    } catch (e) {
+      UI.toast('Не удалось загрузить сессии', 'error');
+    }
+  }
+
+  async function loadSubscriptions() {
+    try {
+      const resp = await Auth.apiFetch(`/api/v1/admin/subscriptions?user_id=${USER_ID}`);
+      if (!resp.ok) throw new Error();
+      const data = await resp.json();
+      const tbody = document.querySelector('#subsTable tbody');
+      if (!data.length) {
+        tbody.innerHTML = '';
+        document.getElementById('subsEmpty').style.display = 'block';
+        return;
+      }
+      document.getElementById('subsEmpty').style.display = 'none';
+      tbody.innerHTML = data.map(s => `
+        <tr style="border-bottom:1px solid var(--color-border);">
+          <td style="padding:8px;">${AdminUI.escapeHtml(s.id)}</td>
+          <td style="padding:8px;">${AdminUI.escapeHtml(s.plan_name || s.plan_id)}</td>
+          <td style="padding:8px;">${AdminUI.renderBadge(s.status)}</td>
+          <td style="padding:8px;">${AdminUI.renderDate(s.started_at)}</td>
+          <td style="padding:8px;">${AdminUI.renderDate(s.expires_at)}</td>
+          <td style="padding:8px;">${s.auto_renew ? 'Да' : 'Нет'}</td>
+          <td style="padding:8px;">
+            <button class="btn btn-ghost btn-sm" onclick="extendSub('${s.id}')">Продлить</button>
+            <button class="btn btn-ghost btn-sm" onclick="cancelSub('${s.id}')">Отменить</button>
+          </td>
+        </tr>
+      `).join('');
+    } catch (e) {
+      UI.toast('Не удалось загрузить подписки', 'error');
+    }
+  }
+
+  function extendSub(id) {
+    UI.confirmDialog('Продлить подписку', 'Продлить подписку на 30 дней?', async () => {
+      try {
+        const resp = await Auth.apiFetch(`/api/v1/admin/subscriptions/${id}/extend?days=30`, {method: 'POST'});
+        if (!resp.ok) throw new Error();
+        UI.toast('Подписка продлена', 'success');
+        loadSubscriptions();
+      } catch (e) {
+        UI.toast('Не удалось продлить подписку', 'error');
+      }
+    });
+  }
+
+  function cancelSub(id) {
+    UI.confirmDialog('Отменить подписку', 'Отменить подписку? Авто-продление будет выключено.', async () => {
+      try {
+        const resp = await Auth.apiFetch(`/api/v1/admin/subscriptions/${id}/cancel`, {method: 'POST'});
+        if (!resp.ok) throw new Error();
+        UI.toast('Подписка отменена', 'success');
+        loadSubscriptions();
+      } catch (e) {
+        UI.toast('Не удалось отменить подписку', 'error');
+      }
+    });
+  }
+
+  loadUser();
+  checkSuperadmin();
+  window._sessionsLoaded = true;
+  loadSessions();
+</script>
+{% endblock %}

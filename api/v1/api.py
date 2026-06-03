@@ -1,0 +1,23 @@
+from fastapi import APIRouter
+
+from api.v1.endpoints.root import router as root_router
+from api.v1.endpoints.asr_url import router as asr_url_router
+from api.v1.endpoints.asr_file import router as asr_file_router
+from api.v1.endpoints.asr_ws import router as asr_ws_router
+from api.v1.endpoints.asr_ws_tone import router as asr_ws_tone_router
+from api.v1.endpoints.health import router as health_router
+from api.v1.endpoints.auth import router as auth_router
+from api.v1.endpoints.user import router as user_router
+from api.v1.endpoints.admin import router as admin_api_router
+
+router = APIRouter(prefix="/api/v1")
+
+router.include_router(root_router)
+router.include_router(asr_url_router)
+router.include_router(asr_file_router)
+router.include_router(asr_ws_router)
+router.include_router(asr_ws_tone_router)
+router.include_router(health_router)
+router.include_router(auth_router)
+router.include_router(user_router)
+router.include_router(admin_api_router)

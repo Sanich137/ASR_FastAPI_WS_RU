@@ -1,15 +1,16 @@
+import asyncio
 import time
 import numpy as np
-import config
-from Recognizer import recognizer
+from config import settings
 from utils.bytes_to_samples_audio import get_np_array_samples_float32
 from utils.resamppling import sync_resample_audiosegment
 from utils.slow_down_audio import do_slow_down_audio
-from utils.do_logging import logger
+import logging
 from utils.chunk_doing import samples_padding
 from dataclasses import asdict
 from onnx_asr.utils import read_wav_files, pad_list
 
+logger = logging.getLogger(__name__)
 
 def calc_speed(data):
     time_to_speak_tokens = 0
@@ -41,23 +42,29 @@ def calc_speed(data):
     return speech_speed
 
 
-async def simple_recognise(audio_data, ) -> dict:
-    # Приводим фреймрейт к фреймрейту модели
-    if audio_data.frame_rate != config.BASE_SAMPLE_RATE:
-        audio_data = sync_resample_audiosegment(audio_data, config.BASE_SAMPLE_RATE)
+def _simple_recognise_sync(audio_data, recognizer) -> dict:
+    """Синхронная реализация распознавания (CPU-bound, выполняется в отдельном потоке)."""
+    if audio_data.frame_rate != settings.BASE_SAMPLE_RATE:
+        audio_data = sync_resample_audiosegment(audio_data, settings.BASE_SAMPLE_RATE)
 
     # Перевод в семплы для распознавания.
     samples = get_np_array_samples_float32(audio_data.raw_data, audio_data.sample_width)
-    result = asdict(recognizer.recognize(samples, sample_rate=config.BASE_SAMPLE_RATE))
+    result = asdict(recognizer.recognize(samples, sample_rate=settings.BASE_SAMPLE_RATE))
 
     return result
 
 
+async def simple_recognise(audio_data, recognizer) -> dict:
+    """Асинхронная обёртка над CPU-bound распознаванием."""
+    return await asyncio.to_thread(_simple_recognise_sync, audio_data, recognizer)
+
+
 async def recognise_w_speed_correction(audio_data, multiplier=float(1.0), can_slow_down = False,
-                                       ) -> tuple:
+                                       recognizer = None) -> tuple:
     """
     Распознавание чанка с возможностью контроля быстрой речи.
 
+    :param recognizer: Обязательно получить класс модели распознавания.
     :param multiplier: Float
     :param can_slow_down: Boolean
     :param audio_data: Аудиоданные в формате Audiosegment (puDub).
@@ -71,22 +78,23 @@ async def recognise_w_speed_correction(audio_data, multiplier=float(1.0), can_sl
 
 
     # Парсим результат
-    result = await simple_recognise(audio_data)
+    result = await simple_recognise(audio_data, recognizer)
 
     if can_slow_down and multiplier == 1:
         speed = calc_speed(result)
         logger.debug(f"Скорость аудио {speed} единиц в секунду")
-        if speed > config.SPEECH_PER_SEC_NORM_RATE:
-            # print(max((config.SPEECH_PER_SEC_NORM_RATE - 1) / speed, 0.8))
+        if speed > settings.SPEECH_PER_SEC_NORM_RATE:
+            # print(max((settings.SPEECH_PER_SEC_NORM_RATE - 1) / speed, 0.8))
 
             result, speed, multiplier = await recognise_w_speed_correction(audio_data=audio_data,
                                                can_slow_down=True,
-                                               multiplier=max((config.SPEECH_PER_SEC_NORM_RATE-1)/speed, 0.8)
+                                               multiplier=max((settings.SPEECH_PER_SEC_NORM_RATE-1)/speed, 0.8)
                                                                            )
     return result, speed, multiplier
 
 
-def simple_recognise_batch(list_audio_data: list, batch_size: int = 8) -> list:
+def _simple_recognise_batch_sync(list_audio_data: list, batch_size: int, recognizer) -> list:
+    """Синхронная реализация батч-распознавания (CPU-bound, выполняется в отдельном потоке)."""
     logger.info(f"Выполняется батчинг с размером {batch_size}")
 
     timer_sync_start = time.perf_counter()
@@ -97,7 +105,7 @@ def simple_recognise_batch(list_audio_data: list, batch_size: int = 8) -> list:
     # и выравнивание по длине
     list_of_padded_samples = [samples_padding(samples_to_pad) for samples_to_pad in list_of_all_samples]
 
-    waveform = *pad_list(list_of_padded_samples), config.BASE_SAMPLE_RATE
+    waveform = *pad_list(list_of_padded_samples), settings.BASE_SAMPLE_RATE
     resampled = recognizer.resampler(*waveform)
 
     # Делаем препроцессинг на все данные сразу
@@ -134,9 +142,12 @@ def simple_recognise_batch(list_audio_data: list, batch_size: int = 8) -> list:
 
     logger.debug(f"Время на распознавание за {(time.perf_counter() - start_encoding):.4f} секунд.")
 
-
-
     return list_of_dict_result
+
+
+async def simple_recognise_batch(list_audio_data: list, batch_size: int = 8, recognizer=None) -> list:
+    """Асинхронная обёртка над CPU-bound батч-распознаванием."""
+    return await asyncio.to_thread(_simple_recognise_batch_sync, list_audio_data, batch_size, recognizer)
 
 
 

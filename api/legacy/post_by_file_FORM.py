@@ -1,17 +1,18 @@
 from io import BytesIO
 import asyncio
-
-import config
-from utils.pre_start_init import app
-from utils.do_logging import logger
-from models.fast_api_models import PostFileRequest
+import logging
+from config import settings
+from fastapi import APIRouter, Depends, File, Form, UploadFile
+from models.fast_api_models import PostFileRequest, BaseResponse
+from Recognizer import get_recognizer, Recognizer
 from Recognizer.engine.file_recognition import process_file
-from fastapi import Depends, File, Form, UploadFile
-from threading import Lock
+from Punctuation import get_punctuator, SbertPuncCaseOnnx
 
+from Diarisation import get_diarizer
+from Diarisation.do_diarize import Diarizer
 
-# Глобальный лок для потокобезопасности
-audio_lock = Lock()
+logger = logging.getLogger(__name__)
+router = APIRouter()
 
 # Функция для извлечения параметров из FormData
 def get_file_request(
@@ -21,8 +22,8 @@ def get_file_request(
     do_punctuation: bool = Form(default=False, description="Восстанавливать пунктуацию."),
     do_diarization: bool = Form(default=False, description="Разделять по спикерам."),
     diar_vad_sensity: int = Form(default=3, description="Чувствительность VAD."),
-    use_batch: bool = Form(default=config.USE_BATCH, description="Использовать батчинг для ASR."),
-    batch_size: int = Form(default=config.ASR_BATCH_SIZE, description="Размер батча для ASR."),
+    use_batch: bool = Form(default=settings.USE_BATCH, description="Использовать батчинг для ASR."),
+    batch_size: int = Form(default=settings.ASR_BATCH_SIZE, description="Размер батча для ASR."),
     do_auto_speech_speed_correction: bool = Form(default=True, description="Корректировать скорость речи при распознавании."),
     speech_speed_correction_multiplier: float = Form(default=1, description="Базовый коэффициент скорости речи."),
     make_mono: bool = Form(default=False, description="Соединить несколько каналов в mono"),
@@ -42,21 +43,17 @@ def get_file_request(
     )
 
 
-@app.post("/post_file")
-async def async_receive_file(
+@router.post("/post_file", response_model=BaseResponse)
+async def async_receive_file_legacy(
     file: UploadFile = File(description="Аудиофайл для обработки"),
     params: PostFileRequest = Depends(get_file_request),
-):
-    res = True
-    error_description = str()
-
-    result = {
-        "success": res,
-        "error_description": error_description,
-        "raw_data": dict(),
-        "sentenced_data": dict(),
-    }
-
+    recognizer: Recognizer = Depends(get_recognizer),
+    punctuator: SbertPuncCaseOnnx = Depends(get_punctuator),
+    diarizer: Diarizer = Depends(get_diarizer)
+) -> BaseResponse:
+    logger.warning(
+        "Legacy endpoint /post_file is deprecated. Use /api/v1/asr/file instead.",
+    )
     # Сохраняем файл на диск асинхронно
     try:
         buffer = BytesIO(await file.read())
@@ -64,19 +61,34 @@ async def async_receive_file(
     except Exception as e:
         error_description = f"Не удалось сохранить файл для распознавания: {file.filename}, размер файла: {file.size}, по причине: {e}"
         logger.error(error_description)
-        result["success"] = False
-        result["error_description"] = error_description
-        return result
+        return BaseResponse(
+            success=False,
+            error_description=error_description,
+            raw_data={},
+            sentenced_data={},
+            diarized_data={},
+        )
     else:
         logger.info(f"Получен и сохранён файл {file.filename}")
         try:
             # Запускаем обработку в потоке
-            result = await asyncio.to_thread(process_file, buffer, params)
+            result_dict = await asyncio.to_thread(process_file,
+                                                  tmp_path=buffer,
+                                                  params=params,
+                                                  recognizer=recognizer,
+                                                  punctuator=punctuator,
+                                                  diarizer=diarizer)
+            result = BaseResponse(**result_dict)
         except Exception as e:
             error_description = f"Ошибка обработки в process_file - {e}"
             logger.error(error_description)
-            result["success"] = False
-            result['error_description'] = str(error_description)
+            result = BaseResponse(
+                success=False,
+                error_description=str(error_description),
+                raw_data={},
+                sentenced_data={},
+                diarized_data={},
+            )
         finally:
             # Удаляем временный файл
             await file.close()

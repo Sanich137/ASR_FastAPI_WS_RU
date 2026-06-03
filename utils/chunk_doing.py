@@ -1,7 +1,6 @@
-import config
+from config import settings
 import numpy as np
 from pydub import AudioSegment
-from utils.do_logging import logger
 from utils.bytes_to_samples_audio import get_np_array_samples_float32
 
 from utils.pre_start_init import (audio_overlap,
@@ -11,6 +10,8 @@ from utils.pre_start_init import (audio_overlap,
 
 from VoiceActivityDetector import vad
 from utils.resamppling import async_resample_audiosegment
+import logging
+logger = logging.getLogger(__name__)
 
 
 async def find_last_speech_position(socket_id, is_last_chunk):
@@ -25,11 +26,11 @@ async def find_last_speech_position(socket_id, is_last_chunk):
 
     if is_last_chunk:
         last_audio =  audio_overlap[socket_id] + audio_buffer[socket_id]
-        # for i in last_audio[::config.MAX_OVERLAP_DURATION*1000]:
+        # for i in last_audio[::settings.MAX_OVERLAP_DURATION*1000]:
         #     audio_to_asr[socket_id].append(last_audio[:i])
 
-        for i in range(0, len(last_audio), config.MAX_OVERLAP_DURATION*1000):
-            audio_to_asr[socket_id].append(last_audio[i:min(i + config.MAX_OVERLAP_DURATION*1000, len(last_audio))])
+        for i in range(0, len(last_audio), settings.MAX_OVERLAP_DURATION*1000):
+            audio_to_asr[socket_id].append(last_audio[i:min(i + settings.MAX_OVERLAP_DURATION*1000, len(last_audio))])
 
 
 
@@ -83,7 +84,7 @@ async def find_last_speech_position(socket_id, is_last_chunk):
         min_silence_frames = int(duration_seconds / frame_duration)
 
         # Устанавливаем стартовые значения.
-        max_audio_length = len(audio) if len(audio) < config.MAX_OVERLAP_DURATION*silero_bitrate else config.MAX_OVERLAP_DURATION*silero_bitrate
+        max_audio_length = len(audio) if len(audio) < settings.MAX_OVERLAP_DURATION*silero_bitrate else settings.MAX_OVERLAP_DURATION*silero_bitrate
 
         partial_frame_length = 0
 
@@ -148,7 +149,7 @@ async def find_last_speech_position(socket_id, is_last_chunk):
     return
 
 
-def samples_padding(samples, sample_rate = config.BASE_SAMPLE_RATE, duration = config.MAX_OVERLAP_DURATION) -> np.ndarray:
+def samples_padding(samples, sample_rate = settings.BASE_SAMPLE_RATE, duration = settings.MAX_OVERLAP_DURATION) -> np.ndarray:
 
     max_samples_len = int(duration * sample_rate)
     # Выравнивание до максимальной длины
@@ -158,8 +159,8 @@ def samples_padding(samples, sample_rate = config.BASE_SAMPLE_RATE, duration = c
         padded_samples[:len(samples)] = samples
     elif len(samples) > max_samples_len:
         # Обрезка до максимальной длины
-        logger.warning(f"Аудио длиной {len(samples) / config.BASE_SAMPLE_RATE:.2f} сек. "
-                       f"превышает MAX_OVERLAP_DURATION ({config.MAX_OVERLAP_DURATION} сек.). "
+        logger.warning(f"Аудио длиной {len(samples) / settings.BASE_SAMPLE_RATE:.2f} сек. "
+                       f"превышает MAX_OVERLAP_DURATION ({settings.MAX_OVERLAP_DURATION} сек.). "
                        f"Будет обрезано до {max_samples_len} семплов.")
         padded_samples = samples[:max_samples_len]
 
@@ -168,3 +169,141 @@ def samples_padding(samples, sample_rate = config.BASE_SAMPLE_RATE, duration = c
         padded_samples = samples
 
     return padded_samples
+
+
+async def find_last_speech_position_v2(session, is_last_chunk):
+    """
+    Версия find_last_speech_position без глобальных dict.
+    Работает с полями session: audio_buffer, audio_overlap, audio_to_asr.
+    """
+    import time
+    vad_start = time.perf_counter()
+
+    if is_last_chunk:
+        last_audio = session.audio_overlap + session.audio_buffer
+        for i in range(0, len(last_audio), settings.MAX_OVERLAP_DURATION * 1000):
+            session.audio_to_asr.append(
+                last_audio[i:min(i + settings.MAX_OVERLAP_DURATION * 1000, len(last_audio))]
+            )
+        logger.debug(
+            "VAD last_chunk for %s: split into %d segments, total=%.3f sec, elapsed=%.3f sec",
+            session.client_id,
+            len(session.audio_to_asr),
+            last_audio.duration_seconds,
+            time.perf_counter() - vad_start,
+        )
+        return
+
+    # --- Не последний чанк: ищем паузу ---
+    session.audio_buffer = session.audio_overlap + session.audio_buffer
+    frame_rate = session.audio_buffer.frame_rate
+    silero_bitrate = 16000
+
+    if not session.audio_buffer:
+        logger.error("Ошибка: audio_buffer пустой")
+        raise ValueError("audio_buffer не может быть пустым")
+
+    if session.audio_buffer.frame_rate != silero_bitrate:
+        audio_for_vad = await async_resample_audiosegment(session.audio_buffer, silero_bitrate)
+    else:
+        audio_for_vad = session.audio_buffer
+
+    logger.debug(
+        "VAD start for %s: buffer=%.3f sec, overlap=%.3f sec, frame_rate=%d",
+        session.client_id,
+        session.audio_buffer.duration_seconds,
+        session.audio_overlap.duration_seconds,
+        frame_rate,
+    )
+
+    # Добавляем overlap к VAD-аудио для поиска границы (как в оригинале)
+    audio_for_vad = session.audio_overlap + audio_for_vad
+
+    try:
+        audio = get_np_array_samples_float32(audio_for_vad.raw_data, audio_for_vad.sample_width)
+        logger.debug(f"Аудио для VAD: длина={len(audio)}, min={np.min(audio)}, max={np.max(audio)}")
+    except Exception as e:
+        logger.error(f"Ошибка в get_np_array_samples_float32: {e}")
+        raise
+
+    if np.any(np.isnan(audio)) or np.any(np.isinf(audio)):
+        logger.error("Обнаружены NaN или бесконечные значения в audio")
+        raise ValueError("Некорректные значения в audio")
+
+    duration_seconds = 0.5
+    frame_length = 512 if audio_for_vad.frame_rate == 16000 else 256
+
+    if frame_length is None:
+        raise ValueError("для VAD Поддерживаются только фреймрейты 8000 или 16000 Гц")
+
+    frame_duration = frame_length / frame_rate
+    min_silence_frames = int(duration_seconds / frame_duration)
+    max_audio_length = len(audio) if len(audio) < settings.MAX_OVERLAP_DURATION * silero_bitrate else settings.MAX_OVERLAP_DURATION * silero_bitrate
+    partial_frame_length = 0
+
+    frames = [audio[i:i + frame_length] for i in range(int(len(audio) // 3), max_audio_length, frame_length)]
+    logger.debug(f"Создано фреймов: {len(frames)}, frame_length={frame_length}")
+
+    silence_frames = 0
+    await vad.reset_state()
+    vad_state = vad.state
+
+    no_silent = False
+    for i, frame in enumerate(reversed(frames)):
+        vad.state = vad_state
+        try:
+            if len(frame) < frame_length:
+                partial_frame_length = len(frame)
+                logger.debug(f"Пропущен неполный фрейм: длина={partial_frame_length}")
+                continue
+            else:
+                speech_prob, vad_state = await vad.is_speech(frame, audio_for_vad.frame_rate)
+                if speech_prob < vad.prob_level:
+                    silence_frames += 1
+                    if silence_frames >= min_silence_frames:
+                        break
+                else:
+                    silence_frames = 0
+        except Exception as e:
+            logger.error(f"Ошибка VAD - {e}"
+                        f"\nframe_rate = {frame_rate}"
+                        f"\nframe_length = {frame_length}"
+                        f"\nframe_index = {i}"
+                        f"\nframe_length_actual = {len(frame)}")
+            raise
+    else:
+        no_silent = True
+
+    try:
+        if no_silent:
+            speech_end = max_audio_length
+        elif not partial_frame_length:
+            speech_end = max_audio_length - (i + 1) * frame_length
+        else:
+            speech_end = max_audio_length - i * frame_length
+    except Exception as e:
+        logger.error(f"Ошибка вычисления speech_end: {e}")
+        speech_end = max_audio_length
+        no_silent = True
+
+    separation_time = int(speech_end * 1000 / silero_bitrate)
+    asr_segment = session.audio_buffer[:separation_time]
+    overlap_segment = session.audio_buffer[separation_time:]
+
+    session.audio_to_asr.append(asr_segment)
+    session.audio_overlap = overlap_segment if overlap_segment.duration_seconds > 0 else AudioSegment.silent(1, frame_rate)
+    session.audio_buffer = AudioSegment.silent(1, frame_rate)
+
+    logger.debug(
+        "VAD done for %s: no_silent=%s, speech_end=%d, separation_time=%d ms, "
+        "asr_segment=%.3f sec, overlap=%.3f sec, elapsed=%.3f sec",
+        session.client_id,
+        no_silent,
+        speech_end,
+        separation_time,
+        asr_segment.duration_seconds,
+        session.audio_overlap.duration_seconds,
+        time.perf_counter() - vad_start,
+    )
+
+    return
