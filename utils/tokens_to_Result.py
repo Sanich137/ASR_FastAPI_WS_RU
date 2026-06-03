@@ -1,7 +1,6 @@
 import asyncio
 
 from numpy.ma.core import count
-from sympy.physics.units import speed
 
 from utils.do_logging import logger
 
