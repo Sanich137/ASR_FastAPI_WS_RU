@@ -1,5 +1,5 @@
 """
-WebSocket-роут /api/v1/asr/ws
+WebSocket-роут /api/v1/asr/ws-stream
 Использует ConnectionManager, AudioSession, MessageRouter, asr_pipeline.
 Сохраняет обратную совместимость протокола (config, audio, eof/eos).
 """
@@ -52,13 +52,13 @@ async def audio_session_lifecycle(client_id: str):
         await session.reset()
 
 
-@router.websocket("/ws")
+@router.websocket("/ws-stream")
 async def websocket_endpoint(
     websocket: WebSocket,
     recognizer: Recognizer = Depends(get_recognizer),
     punctuator: SbertPuncCaseOnnx = Depends(get_punctuator),
     db: AsyncSession = Depends(get_db_session),
-    ):
+):
     """
     WebSocket endpoint для потокового распознавания речи (ASR).
 
@@ -72,11 +72,11 @@ async def websocket_endpoint(
     state_store = websocket.app.state.state_store
 
     client_id = str(uuid.uuid4())
-    logger.info("New WS connection: %s", client_id)
+    logger.info(f"New WS connection: {client_id}")
 
     # 1. Подключение (с проверкой лимита соединений)
     if not await manager.connect(websocket, client_id):
-        logger.warning("Connection rejected for %s (max connections reached)", client_id)
+        logger.warning(f"Connection rejected for {client_id} (max connections reached)", )
         return
 
     # 1a. Ожидание первого фрейма (auth или config) — таймаут 5 сек
@@ -85,7 +85,7 @@ async def websocket_endpoint(
     try:
         auth_msg = await asyncio.wait_for(websocket.receive(), timeout=5.0)
         if auth_msg.get("type") == "websocket.disconnect":
-            logger.info("Client %s disconnected before auth", client_id)
+            logger.info(f"Client {client_id} disconnected before auth", )
             return
         if auth_msg.get("text"):
             import json
@@ -101,9 +101,9 @@ async def websocket_endpoint(
                 pending_message = auth_msg
     except asyncio.TimeoutError:
         # Гостевой доступ: не закрываем соединение, просто логируем
-        logger.info("No auth for client %s, continuing as guest", client_id)
+        logger.info(f"No auth for client {client_id}, continuing as guest")
     except Exception as exc:
-        logger.warning("Auth error for client %s: %s", client_id, exc)
+        logger.warning(f"Auth error for client {client_id}: {exc}")
 
     # 2. Жизненный цикл сессии (гарантированная очистка в finally)
     async with audio_session_lifecycle(client_id) as session:
@@ -140,7 +140,7 @@ async def websocket_endpoint(
                             timeout=settings.WS_IDLE_TIMEOUT_SEC,
                         )
                 except asyncio.TimeoutError:
-                    logger.info("Idle timeout for client %s", client_id)
+                    logger.info(f"Idle timeout for client {client_id}")
                     await manager.send_message(
                         client_id,
                         WSErrorMessage(
@@ -210,7 +210,7 @@ async def websocket_endpoint(
                 # 6. Обработка аудио-чанка
                 if isinstance(msg, WSAudioMessage):
                     if session.config is None:
-                        logger.warning("Audio chunk received before config from %s", client_id)
+                        logger.warning(f"Audio chunk received before config from {client_id}")
                         await manager.send_message(
                             client_id,
                             WSErrorMessage(
@@ -234,9 +234,9 @@ async def websocket_endpoint(
                     break
 
         except WebSocketDisconnect:
-            logger.info("Client %s disconnected normally", client_id)
+            logger.info(f"Client {client_id} disconnected normally")
         except Exception as exc:
-            logger.exception("WS error for %s: %s", client_id, exc)
+            logger.exception(f"WS error for {client_id}: {exc}", )
             if asr_db_session:
                 try:
                     asr_db_session.status = ASRSessionStatus.failed
@@ -257,7 +257,7 @@ async def websocket_endpoint(
             except Exception:
                 pass
         finally:
-            logger.info("Closing WS connection %s", client_id)
+            logger.info(f"Closing WS connection {client_id}")
             # Сохранение результата в БД
             if asr_db_session:
                 try:
@@ -266,10 +266,10 @@ async def websocket_endpoint(
                     asr_db_session.result_json = session.ws_collected_asr_res
                     await db.commit()
                 except Exception as exc:
-                    logger.debug("Failed to save ASRSession result: %s", exc)
+                    logger.debug(f"Failed to save ASRSession result: {exc}")
             # Сохранение мета-информации в StateStore (аудит / восстановление)
             try:
                 await state_store.set(f"session:{client_id}", session.to_dict())
             except Exception as exc:
-                logger.debug("Failed to save session state: %s", exc)
+                logger.debug(f"Failed to save session state: {exc}")
             await manager.disconnect(client_id)

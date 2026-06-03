@@ -1,8 +1,12 @@
+# Todo При старте создавать .env из примера env.
+# Todo При старте проверять наличие DВ, при отсутствии создавать DB
+
 import asyncio
 import logging
 import time
 import uvicorn
-from config import settings
+
+from config import settings, WS_DESCRIPTION
 import os
 import gc
 from contextlib import asynccontextmanager
@@ -31,7 +35,6 @@ from core.middleware import RateLimitMiddleware
 from api.v1.endpoints.admin_ws import router as admin_ws_router
 from services.metrics_reporter import metrics_reporter_loop
 import models
-from config import WS_DESCRIPTION
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +126,11 @@ async def lifespan(app):
     # Инициируем recognizer
     from Recognizer import Recognizer
     app.state.recognizer = Recognizer()
+
+
+    # Инициируем stream recognizer
+    from Recognizer import StreamRecognizer
+    app.state.stream_recognizer = StreamRecognizer()
 
     # Инициируем punctuator
     from Punctuation import SbertPuncCaseOnnx

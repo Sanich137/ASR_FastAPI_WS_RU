@@ -24,13 +24,22 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list[str] = ["*"]
     TRUSTED_PROXIES: list[str] = ["*"]
 
-    # Model settings
+    # ASR Model settings
     # Vosk5SmallStreaming  Vosk5 Gigaam Whisper Gigaam_rnnt, "gigaam-v3-rnnt", "gigaam-v3-ctc"
     MODEL_NAME: str = "gigaam-v3-ctc"
     # Стрим из астериска отдаёт только 8к
     BASE_SAMPLE_RATE: int = 16000
     PROVIDER: str = "CPU"
     NUM_THREADS: int = 0
+
+    # ASR streaming settings (потоковый риалтайм на /api/v1/asr/ws-stream)
+    USE_STREAMING_ASR: bool = False
+    STREAMING_ASR_MODEL_NAME: str = "t-tech/t-one"      # alphacep/vosk-model-small-ru
+    STREAMING_ASR_DECODER: str = "beam_search"        # "beam_search" (с KenLM) | "greedy"
+    STREAMING_ASR_SAMPLE_RATE: int = 8000             # фиксировано акустической моделью T-one
+    STREAMING_ASR_CHUNK_SAMPLES: int = 2400           # 300 мс @ 8 кГц - фиксированный размер чанка T-one
+    STREAMING_ASR_PROVIDER: str = "CPU"
+
 
     # HuggingFace Hub settings
     HF_HOME: str = "./models"

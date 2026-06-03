@@ -8,8 +8,9 @@ import logging
 
 
 class ASRStreamingClient:
-    def __init__(self, uri, frame_rate=8000, buffer_size_sec=0.5):
+    def __init__(self, legacy, uri, frame_rate=8000, buffer_size_sec=0.5):
         self.uri = uri
+        self.legacy = legacy
         self.frame_rate = frame_rate
         self.buffer_size = int(frame_rate * buffer_size_sec * 2)  # 16-bit samples
         self.active = False
@@ -25,7 +26,7 @@ class ASRStreamingClient:
                 close_timeout=2
         ) as websocket:
             # Отправка конфигурации
-            await self._send_config(websocket, sound.frame_rate, wait_null_answers)
+            await self._send_config(websocket, sound.frame_rate, wait_null_answers, legacy=self.legacy)
 
             # Потоковая передача данных и обработка ответов параллельно
             await asyncio.gather(
@@ -41,36 +42,57 @@ class ASRStreamingClient:
             sound = (sound.set_frame_rate(self.frame_rate))
         return sound.set_channels(1)
 
-    async def _send_config(self, websocket, sample_rate, wait_null_answers):
+    async def _send_config(self, websocket, sample_rate, wait_null_answers, legacy = True):
         """Отправка конфигурации серверу"""
-        config = {
-            "sample_rate": sample_rate,
-            "wait_null_answers": wait_null_answers,
-            "audio_format": "pcm16",
-            "language": "ru",
-            "do_dialogue": "true",
-            "do_punctuation": "false",
-        }
-        await websocket.send(ujson.dumps({"config": config}))
+        if legacy:
+            config = {
+                "sample_rate": sample_rate,
+                "wait_null_answers": wait_null_answers,
+                "audio_format": "pcm16",
+                "language": "ru",
+                "do_dialogue": "true",
+                "do_punctuation": "false",
+
+            }
+            await websocket.send(ujson.dumps({"config": config}))
+
+        else:
+            config = {
+                "type": "config",
+                "sample_rate": 16000,
+                "audio_format": "pcm16",
+                "audio_transport": "json_base64",
+                "wait_null_answers": True,
+                "do_dialogue": False,
+                "do_punctuation": False,
+                "channel_name": "channel_1"
+            }
+            await websocket.send(ujson.dumps(config))
+
         logging.info("Configuration sent")
 
     async def _stream_data(self, websocket, sound):
         """Потоковая передача аудиоданных"""
         try:
             data = sound.raw_data
-            chunk_size = self.buffer_size
 
-            for i in range(0, len(data), chunk_size):
+            for i in range(0, len(data), self.buffer_size):
                 if not self.active:
                     break
 
-                chunk = data[i:i + chunk_size]
+                chunk = data[i:i + self.buffer_size]
                 await websocket.send(chunk)
                 await asyncio.sleep(0.01)  # Увеличил паузу для синхронизации с сервером
 
-            # Отправка EOF после завершения стриминга
-            await websocket.send(ujson.dumps({"eof": True}))
-            logging.info("EOF sent")
+            if self.legacy:
+                # Отправка EOF после завершения стриминга
+                await websocket.send(ujson.dumps({"eof": True}))
+                logging.info("EOF sent")
+            else:
+                # Отправка EOS после завершения стриминга
+                await websocket.send(ujson.dumps({"type": "eos"}))
+                logging.info("EOS sent")
+
 
             # Даём серверу время отправить последние ответы
             await asyncio.sleep(0.01)
@@ -123,11 +145,19 @@ if __name__ == "__main__":
     # Для запуска из IDE
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
-    args.uri ="ws://192.168.101.28:49153/ws"
+
+    # legacy код на легаси роут или легаси на трустриминг порт
+    args.legacy = False
     args.file = "orig.wav"
     args.frame_rate = 16000
-    args.buffer_size = 4
+    args.buffer_size = 0.1
 
+    match args.legacy:
+        case True:
+            args.uri ="ws://192.168.101.28:49153/ws"
+        case False:
+            # args.uri = "ws://192.168.101.28:49153/api/v1/asr/ws" # обычный роут
+            args.uri = "ws://192.168.101.28:49153/api/v1/asr/ws-stream" # Стриминговый роут
 
     logging.basicConfig(
         level=logging.INFO,
@@ -135,6 +165,7 @@ if __name__ == "__main__":
     )
 
     client = ASRStreamingClient(
+        args.legacy,
         args.uri,
         frame_rate=args.frame_rate,
         buffer_size_sec=args.buffer_size
