@@ -45,10 +45,10 @@ class RecognitionSession:
 
         # AudioSegment-буферы (общие для WS и файлового режима)
         self.audio_buffer: AudioSegment = AudioSegment.silent(
-            1, frame_rate=settings.BASE_SAMPLE_RATE
+            20, frame_rate=settings.BASE_SAMPLE_RATE
         )
         self.audio_overlap: AudioSegment = AudioSegment.silent(
-            1, frame_rate=settings.BASE_SAMPLE_RATE
+            20, frame_rate=settings.BASE_SAMPLE_RATE
         )
         self.audio_to_asr: list[AudioSegment] = []
         self.audio_duration: float = 0.0
@@ -69,12 +69,14 @@ class RecognitionSession:
         """
         Очищает AudioSegment-буферы, результаты и сбрасывает состояние.
         """
-        self.audio_buffer = AudioSegment.silent(1, frame_rate=settings.BASE_SAMPLE_RATE)
-        self.audio_overlap = AudioSegment.silent(1, frame_rate=settings.BASE_SAMPLE_RATE)
+        self.audio_buffer = AudioSegment.silent(20, frame_rate=settings.BASE_SAMPLE_RATE)
+        self.audio_overlap = AudioSegment.silent(20, frame_rate=settings.BASE_SAMPLE_RATE)
         self.audio_to_asr = []
+        self.collected_online_phrase_res: None
         self.audio_duration = 0.0
         self.collected_asr_res = {f"channel_{1}": []}
         self.state = SessionState.created
+
 
     def to_dict(self) -> dict:
         """

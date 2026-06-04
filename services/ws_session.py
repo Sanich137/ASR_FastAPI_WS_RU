@@ -52,11 +52,26 @@ class AudioSession(RecognitionSession):
             else getattr(settings, "WS_MAX_BUFFER_DURATION_SEC", 300.0)
         )
         self.buffer: deque[np.ndarray] = deque()
+        self.collected_online_phrase_res: dict = {'logprobs': [], 'text': [], 'timestamps': [], 'tokens': []}
+
+
+    @property
+    def ws_collected_online_phrase_res(self) -> dict:
+        """Alias для collected_asr_res из RecognitionSession (обратная совместимость)."""
+        return self.collected_online_phrase_res
+
+
+    @ws_collected_online_phrase_res.setter
+    def ws_collected_online_phrase_res(self, value: dict) -> None:
+        self.collected_online_phrase_res = value
+
+
 
     @property
     def ws_collected_asr_res(self) -> dict:
         """Alias для collected_asr_res из RecognitionSession (обратная совместимость)."""
         return self.collected_asr_res
+
 
     @ws_collected_asr_res.setter
     def ws_collected_asr_res(self, value: dict) -> None:
@@ -189,3 +204,4 @@ class AudioSession(RecognitionSession):
             getattr(settings, "WS_MAX_BUFFER_DURATION_SEC", 300.0),
         )
         return session
+

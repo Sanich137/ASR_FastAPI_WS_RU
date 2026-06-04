@@ -40,6 +40,8 @@ class ASRStreamingClient:
         if sound.frame_rate != self.frame_rate:
             logging.warning(f"Конвертация FR {sound.frame_rate} → {self.frame_rate}")
             sound = (sound.set_frame_rate(self.frame_rate))
+
+        return sound.split_to_mono()[1]
         return sound.set_channels(1)
 
     async def _send_config(self, websocket, sample_rate, wait_null_answers, legacy = True):
@@ -149,8 +151,8 @@ if __name__ == "__main__":
     # legacy код на легаси роут или легаси на трустриминг порт
     args.legacy = False
     args.file = "orig.wav"
-    args.frame_rate = 16000
-    args.buffer_size = 0.1
+    args.frame_rate = 22050
+    args.buffer_size = 0.3
 
     match args.legacy:
         case True:

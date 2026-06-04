@@ -38,7 +38,7 @@ async def process_audio_stream_chunk(
     metrics_collector: Optional[Any] = None,
 ) -> None:
     """
-    Обрабатывает входящий чанк аудио в потоковом режиме.
+    Обрабатывает входящий чанк аудио в псевдо потоковом режиме.
 
     Алгоритм:
       1. Проверяет чётность байтов (дополняет до чётного при необходимости).
@@ -89,7 +89,6 @@ async def process_audio_stream_chunk(
         session.audio_buffer += audiosegment_chunk
         session.last_activity = __import__("time").time()
 
-        # --- 5. Проверка порога VAD ---
         combined_duration = (session.audio_overlap + session.audio_buffer).duration_seconds
         logger.debug(
             "Chunk received for %s: chunk=%.3f sec, buffer=%.3f sec, overlap=%.3f sec, combined=%.3f sec",
@@ -102,7 +101,7 @@ async def process_audio_stream_chunk(
         if combined_duration < settings.MAX_OVERLAP_DURATION:
             return
 
-        # --- 5a. VAD-разделение через find_last_speech_position_v2 ---
+        # --- 5. Проверка порога VAD, VAD-разделение через find_last_speech_position_v2 ---
         try:
             await find_last_speech_position_v2(session, is_last_chunk=False)
         except Exception as exc:
@@ -324,3 +323,172 @@ async def process_final_audio(
     finally:
         if metrics_collector is not None:
             metrics_collector.decrement_tasks()
+
+
+async def process_audio_online_stream_chunk(
+    session: AudioSession,
+    chunk_bytes: bytes,
+    recognizer,
+    punctuator,
+    manager: ConnectionManager,
+    metrics_collector: Optional[Any] = None,
+) -> None:
+    """
+    Обрабатывает входящий чанк аудио в насоящем потоковом режиме.
+
+    Алгоритм:
+      1. Проверяет чётность байтов (дополняет до чётного при необходимости).
+      2. Создаёт AudioSegment из raw bytes (PCM16) или через from_file для других форматов.
+      3. Ресемплит до BASE_SAMPLE_RATE, приводит к моно.
+      4. Распознаёт каждый новый поступивший чанк.
+      5. Накапливает ответы и после добавления ответа проверяет, нет ли в добавленном сегменте паузы, достаточной для ограничения фразы.
+            По умолчанию разрыв фразы - 0,6 секунды.
+      6. Применяет process_single_token_vocab_output со сдвигом времени.
+      7. При достижении MAX_OVERLAP_DURATION считает, что фраза слишком длинная и распознаёт.
+      8. Отправляет результат клиенту (или silence partial при пустом тексте).
+
+    Args:
+        session: Текущая аудио-сессия (содержит audio_buffer, audio_overlap и т.д.).
+        chunk_bytes: Сырые байты аудио от клиента.
+        recognizer: Экземпляр Recognizer.
+        punctuator: Экземпляр SbertPuncCaseOnnx (не используется в чанке, передаётся для единообразия).
+        manager: Менеджер WebSocket-соединений для отправки ответов.
+    """
+    phrase_ended = False
+
+    try:
+        # --- 1. Проверка чётности ---
+        if len(chunk_bytes) % 2 != 0:
+            chunk_bytes += bytes(2 - (len(chunk_bytes) % 2))
+
+        # --- 2. Создание AudioSegment ---
+        audio_format = session.config.audio_format if session.config else "pcm16"
+        sample_rate = session.config.sample_rate if session.config else settings.BASE_SAMPLE_RATE
+
+        if audio_format == "pcm16":
+            audiosegment_chunk = AudioSegment(
+                chunk_bytes,
+                frame_rate=sample_rate,
+                sample_width=2,
+                channels=1,
+            )
+        else:
+            buffer = BytesIO(chunk_bytes)
+            buffer.seek(0)
+            audiosegment_chunk = AudioSegment.from_file(buffer)
+
+        # --- 3. Ресемплинг и моно ---
+        if audiosegment_chunk.frame_rate != settings.BASE_SAMPLE_RATE:
+            audiosegment_chunk = await async_resample_audiosegment(audiosegment_chunk, settings.BASE_SAMPLE_RATE)
+        if audiosegment_chunk.channels != 1:
+            audiosegment_chunk = audiosegment_chunk.set_channels(1)
+
+
+        # --- 4. Накопление в буфер ---
+        if not session.audio_buffer:
+            session.audio_buffer = AudioSegment.silent(20, frame_rate=settings.BASE_SAMPLE_RATE)
+
+        session.last_activity = __import__("time").time()
+        combined_duration = (session.audio_overlap + session.audio_buffer).duration_seconds
+        logger.debug(
+            "Chunk received for %s: chunk=%.3f sec, buffer=%.3f sec, overlap=%.3f sec, combined=%.3f sec",
+            session.client_id,
+            audiosegment_chunk.duration_seconds,
+            session.audio_buffer.duration_seconds,
+            session.audio_overlap.duration_seconds,
+            combined_duration,
+        )
+        session.audio_to_asr.append(session.audio_buffer[-20:] + audiosegment_chunk)
+        session.audio_buffer+=audiosegment_chunk
+
+        if combined_duration < settings.MAX_OVERLAP_DURATION and phrase_ended:
+            return
+
+        # --- 6. Распознавание последнего добавленного сегмента ---
+        # Todo - реализовать выход из функции если нет окончания фразы
+        # if not session.audio_to_asr:
+        #     return
+
+        segment = session.audio_to_asr[-1]
+        if segment.duration_seconds <= 0:
+            return
+
+        if metrics_collector is not None:
+            metrics_collector.increment_tasks()
+        # Todo - копить буфер до 300мс направлять на распознавание по 300мс.
+        try:
+            asr_result = await simple_recognise(session.audio_buffer, recognizer=recognizer)
+            # Todo - переписать наполнения словаря
+            # for key, value in asr_result.items():
+            #     if key =='text':
+            #         continue
+            #     session.collected_online_phrase_res[key].extend(value)
+
+
+            # Тут - функция проверки на готовую фразу
+            # Если есть готовая фраза - передавать на декодинг.
+            print(asr_result)
+            # asr_result_words = process_single_token_vocab_output(asr_result, session.audio_duration)
+            # Накопление для анализа фразы диалога
+            # session.collected_asr_res += asr_result_words
+            # Функция проверки - конец ли фразы
+
+            return
+
+
+        finally:
+            if metrics_collector is not None:
+                metrics_collector.decrement_tasks()
+
+        logger.debug(
+            "Chunk recognized for %s: segment=%.3f sec, audio_duration=%.3f sec, text='%s'",
+            session.client_id,
+            segment.duration_seconds,
+            session.audio_duration,
+            asr_result_words.get("data", {}).get("text", "")[:50],
+        )
+
+        # --- 7. Отправка результата ---
+        text = asr_result_words.get("data", {}).get("text", "")
+        is_silence = len(text) == 0 or text == " "
+
+        if is_silence:
+            if session.wait_null_answers:
+                msg = WSResultMessage(
+                    channel_name=session.channel_name,
+                    silence=True,
+                    data=WSRecognitionData(),
+                    error=None,
+                    last_message=False,
+                )
+                await manager.send_message(session.client_id, msg)
+            else:
+                logger.debug("Silence partial skipped (wait_null_answers=False)")
+        else:
+            words = asr_result_words.get("data", {}).get("result", [])
+            ws_words = [
+                WSWordItem(conf=w["conf"], start=w["start"], end=w["end"], word=w["word"])
+                for w in words
+            ]
+            data = WSRecognitionData(result=ws_words, text=text)
+            msg = WSResultMessage(
+                channel_name=session.channel_name,
+                silence=False,
+                data=data,
+                error=None,
+                last_message=False,
+            )
+            await manager.send_message(session.client_id, msg)
+
+    except Exception as exc:
+        logger.exception("ASR pipeline chunk error for %s: %s", session.client_id, exc)
+        session.state = SessionState.error
+        error_msg = WSErrorMessage(
+            code="asr_pipeline_error",
+            message=f"Chunk processing error: {exc}",
+            is_fatal=False,
+        )
+        try:
+            await manager.send_message(session.client_id, error_msg)
+        except Exception:
+            pass

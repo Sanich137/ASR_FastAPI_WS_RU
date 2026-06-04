@@ -25,7 +25,7 @@ from services.ws_manager import ConnectionManager
 from services.ws_session import AudioSession, SessionState
 from services.ws_handler import MessageRouter, handle_config, handle_ping, handle_status_request
 from services.ws_metrics import SystemMetricsCollector
-from services.asr_pipeline import process_audio_stream_chunk, process_final_audio
+from services.asr_pipeline import process_audio_online_stream_chunk, process_final_audio
 from Recognizer import get_recognizer, Recognizer
 from Punctuation import get_punctuator, SbertPuncCaseOnnx
 from db.session import get_db_session
@@ -170,7 +170,7 @@ async def websocket_endpoint(
                         )
                         continue
                     # Binary frame: отправляем сырые байты напрямую в pipeline, без base64-обёртки
-                    await process_audio_stream_chunk(
+                    await process_audio_online_stream_chunk(
                         session, message["bytes"], recognizer, punctuator, manager, metrics
                     )
                     continue
@@ -224,7 +224,7 @@ async def websocket_endpoint(
                     if msg.audio_base64:
                         chunk_bytes = base64.b64decode(msg.audio_base64)
                     if chunk_bytes:
-                        await process_audio_stream_chunk(
+                        await process_audio_online_stream_chunk(
                             session, chunk_bytes, recognizer, punctuator, manager, metrics
                         )
 
