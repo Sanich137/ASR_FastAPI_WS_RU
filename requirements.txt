@@ -5,6 +5,10 @@ pathlib~=1.0.1
 ujson~=5.10.0
 numpy~=2.2.6
 
+# for online stream recognition
+kaldi-native-fbank
+sentencepiece
+
 uvicorn~=0.38.0
 fastapi~=0.124.0
 pydantic~=2.11.4
@@ -48,3 +52,4 @@ watchdog~=6.0.0
 onnx-asr == 0.10.2
 hf_xet
 onnxruntime
+

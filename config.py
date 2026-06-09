@@ -12,6 +12,12 @@ BASE_SAMPLE_RATE = int(os.getenv('BASE_SAMPLE_RATE', 16000))  # Стрим из 
 PROVIDER = os.getenv('PROVIDER',"CUDA")
 NUM_THREADS = int(os.getenv('NUM_THREADS', 0))
 
+# Stream Model settings
+STREAM_MODEL_NAME = os.getenv('STREAM_MODEL_NAME', "vosk_small")  ## vosk, vosk_small, t-one. Пока реализовано и проверено только vosk_small
+STREAM_BASE_SAMPLE_RATE = int(os.getenv('STREAM_BASE_SAMPLE_RATE', 16000))  # Стрим из астериска отдаёт только 8к
+STREAM_PROVIDER = os.getenv('STREAM_PROVIDER',"CUDA")
+STREAM_NUM_THREADS = int(os.getenv('STREAM_NUM_THREADS', 5))
+
 # HuggingFaceHubSettings
 os.environ["HF_HOME"] = os.getenv("HF_HOME", "./models")
 

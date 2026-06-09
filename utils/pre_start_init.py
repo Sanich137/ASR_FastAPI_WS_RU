@@ -41,6 +41,12 @@ paths = {
     "punctuation_model_path": BASE_DIR / "models" / "sbert_punc_case_ru_onnx",
     "vad_model_path": BASE_DIR / "models" / "VAD_silero_v5" / "silero_vad.onnx",
     "diar_speaker_model_path": BASE_DIR / "models" / "DIARISATION_model" / f"{config.DIAR_MODEL_NAME}",
+    "streaming_model_dir": BASE_DIR / "models" / "Vosk_054",
+    "streaming_tokens_path": BASE_DIR / "models" / "Vosk_054" / "tokens.txt",
+    "streaming_bpe_path": BASE_DIR / "models" / "Vosk_054" / "bpe.model",
+    "streaming_unigram_vocab_path": BASE_DIR / "models" / "Vosk_054" / "unigram_500.vocab",
+    "streaming_hotwords_path": BASE_DIR / "models" / "Vosk_054" / "hotwords.txt",
+    "streaming_ngram_lm_path": BASE_DIR / "models" / "Vosk_054" / "2gram.fst.txt",
 
     "BASE_DIR": BASE_DIR,
     "test_file": BASE_DIR /'trash'/'111.wav',

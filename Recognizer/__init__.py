@@ -1,5 +1,11 @@
 import multiprocessing
+import queue
+from typing import Optional
+
 import numpy as np
+from pydub import AudioSegment
+from utils.pre_start_init import paths
+
 
 from utils.do_logging import logger
 from utils import tokens_to_Result
@@ -8,6 +14,8 @@ import config
 import onnxruntime as ort
 import onnx_asr
 from onnx_asr.loader import PreprocessorRuntimeConfig, OnnxSessionOptions
+from Recognizer.temporary_folder.icefall_streaming_asr import IcefallStreamingASR
+
 
 
 TENSORRT_providers = ["TensorrtExecutionProvider", "CUDAExecutionProvider", "CPUExecutionProvider"]
@@ -123,3 +131,88 @@ class Recognizer:
         return self._post_processor(*params)
 
 recognizer = Recognizer()
+
+
+class StreamingRecognizer:
+    """
+    Адаптер потокового распознавания на базе IcefallStreamingASR.
+    Принимает AudioSegment (как весь остальной проект) и возвращает текст.
+    """
+
+    def __init__(self):
+        self._asr = IcefallStreamingASR(
+            model_dir=str(paths["streaming_model_dir"]),
+            tokens_path=str(paths["streaming_tokens_path"]),
+            bpe_model_path=str(paths.get("streaming_bpe_path")),
+            sample_rate=16000,
+            num_mel_bins=80,
+            num_threads=4,
+            use_beam=True,
+            beam_size=15,
+            lm_scale=0.3,
+            backoff_id=500,
+            length_norm=True,
+            unigram_vocab_path=str(paths.get("streaming_unigram_vocab_path")) if paths.get("streaming_unigram_vocab_path") else None,
+            ngram_lm_path=str(paths.get("streaming_ngram_lm_path")) if paths.get("streaming_ngram_lm_path") else None,
+            hotwords_path=str(paths.get("streaming_hotwords_path")) if paths.get("streaming_hotwords_path") else None,
+            hotword_bonus=1.0,
+        )
+
+    def reset(self):
+        self._asr.reset()
+
+    def push_audiosegment(self, segment: AudioSegment):
+        """Принимает AudioSegment (моно, 16 кГц) и отправляет в потоковый ASR."""
+        samples = segment.get_array_of_samples()
+        self._asr.push_audio_chunk(samples, sample_width=segment.sample_width, channels=segment.channels)
+
+    def get_new_text(self) -> str:
+        """Забирает накопленные текстовые чанки."""
+        chunks = []
+        while True:
+            chunk = self._asr.get_transcript_chunk(timeout=0.0)
+            if chunk is None:
+                break
+            chunks.append(chunk)
+        return "".join(chunks)
+
+    def flush(self) -> str:
+        """Финализирует распознавание и возвращает оставшийся текст."""
+        self._asr.flush()
+        return self.get_new_text()
+
+    @property
+    def full_text(self) -> str:
+        return self._asr.text
+
+
+class StreamingRecognizerPool:
+    """
+    Пул переиспользуемых экземпляров StreamingRecognizer.
+    Позволяет избежать дорогостоящей загрузки ONNX-модели
+    при каждом новом WebSocket-соединении.
+    """
+
+    def __init__(self, size: int = 5):
+        self._pool = queue.Queue(maxsize=size)
+        for _ in range(size):
+            self._pool.put(StreamingRecognizer())
+
+    def acquire(self) -> StreamingRecognizer:
+        try:
+            return self._pool.get(block=False)
+        except queue.Empty:
+            logger.warning("StreamingRecognizer pool exhausted, creating new instance")
+            return StreamingRecognizer()
+
+    def release(self, recognizer: Optional[StreamingRecognizer]):
+        if recognizer is None:
+            return
+        recognizer.reset()
+        try:
+            self._pool.put(recognizer, block=False)
+        except queue.Full:
+            pass
+
+
+pool = StreamingRecognizerPool(size=5)
