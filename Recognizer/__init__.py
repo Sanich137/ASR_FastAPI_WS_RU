@@ -1,10 +1,13 @@
 import multiprocessing
 import queue
+import threading
+import uuid
 from typing import Optional
 
 import numpy as np
 from pydub import AudioSegment
 from utils.pre_start_init import paths
+from VoiceActivityDetector.do_vad import SileroVAD
 
 
 from utils.do_logging import logger
@@ -14,7 +17,7 @@ import config
 import onnxruntime as ort
 import onnx_asr
 from onnx_asr.loader import PreprocessorRuntimeConfig, OnnxSessionOptions
-from Recognizer.temporary_folder.icefall_streaming_asr import IcefallStreamingASR
+from Recognizer.engine.icefall_streaming_asr import IcefallStreamingASR
 
 
 
@@ -139,7 +142,8 @@ class StreamingRecognizer:
     Принимает AudioSegment (как весь остальной проект) и возвращает текст.
     """
 
-    def __init__(self):
+    def __init__(self, use_vad: bool = True, use_beam: bool = False,):
+        self._use_vad = use_vad
         self._asr = IcefallStreamingASR(
             model_dir=str(paths["streaming_model_dir"]),
             tokens_path=str(paths["streaming_tokens_path"]),
@@ -147,43 +151,199 @@ class StreamingRecognizer:
             sample_rate=16000,
             num_mel_bins=80,
             num_threads=4,
-            use_beam=True,
-            beam_size=15,
-            lm_scale=0.3,
+            use_beam=use_beam,
+            beam_size=5,
+            lm_scale=0.2,
             backoff_id=500,
-            length_norm=True,
-            unigram_vocab_path=str(paths.get("streaming_unigram_vocab_path")) if paths.get("streaming_unigram_vocab_path") else None,
-            ngram_lm_path=str(paths.get("streaming_ngram_lm_path")) if paths.get("streaming_ngram_lm_path") else None,
-            hotwords_path=str(paths.get("streaming_hotwords_path")) if paths.get("streaming_hotwords_path") else None,
-            hotword_bonus=1.0,
+            length_norm=False,
+            hotwords_path=str(paths.get("streaming_hotwords_path")),
+            hotword_bonus=0.0,
         )
+        self._mode = 'vad' if self._use_vad else 'stream'
+        if self._use_vad:
+            self._vad = SileroVAD(paths.get("vad_model_path"), use_gpu=config.VAD_WITH_GPU)
+            self._vad.set_mode(config.VAD_SENSITIVITY)
+            self._vad_samples = np.array([], dtype=np.int16)
+            self._pre_roll_buffer = []
+            self._in_speech = False
+            self._vad_frame_count = 0
 
     def reset(self):
         self._asr.reset()
+        self._mode = 'vad' if self._use_vad else 'stream'
+        if self._use_vad:
+            self._vad.reset_state_sync()
+            self._vad_samples = np.array([], dtype=np.int16)
+            self._pre_roll_buffer = []
+            self._in_speech = False
+            self._vad_frame_count = 0
 
     def push_audiosegment(self, segment: AudioSegment):
         """Принимает AudioSegment (моно, 16 кГц) и отправляет в потоковый ASR."""
-        samples = segment.get_array_of_samples()
-        self._asr.push_audio_chunk(samples, sample_width=segment.sample_width, channels=segment.channels)
+        if not self._use_vad:
+            samples = segment.get_array_of_samples()
+            self._asr.push_audio_chunk(samples, sample_width=segment.sample_width, channels=segment.channels)
+            return
+        samples = np.array(segment.get_array_of_samples(), dtype=np.int16)
+        if segment.channels > 1:
+            samples = samples.reshape((-1, segment.channels)).mean(axis=1).astype(np.int16)
+        if self._mode == 'stream':
+            self._asr.push_audio_chunk(samples, sample_width=2, channels=1)
+            return
+        self._process_vad(samples)
 
-    def get_new_text(self) -> str:
+    def _process_vad(self, samples: np.ndarray):
+        # samples: int16, mono, 16kHz
+        if len(self._vad_samples) == 0:
+            self._vad_samples = samples
+        else:
+            self._vad_samples = np.concatenate((self._vad_samples, samples))
+        frame_size = self._vad.frame_size
+
+        while len(self._vad_samples) >= frame_size:
+            frame = self._vad_samples[:frame_size]
+            self._vad_samples = self._vad_samples[frame_size:]
+
+            frame_float = frame.astype(np.float32) / 32768.0
+            prob, state = self._vad.is_speech_sync(frame_float, self._vad.sample_rate)
+            self._vad.state = state
+
+            if prob > self._vad.prob_level:
+                # Начало речи: отправляем pre-roll + текущий фрейм в ASR
+                if self._pre_roll_buffer:
+                    speech_chunk = np.concatenate(self._pre_roll_buffer + [frame])
+                else:
+                    speech_chunk = frame
+                self._asr.push_audio_chunk(speech_chunk, sample_width=2, channels=1)
+                self._mode = 'stream'
+                self._asr.mark_stream_resume()
+                self._pre_roll_buffer = []
+                # Отправляем остаток уже накопленных сэмплов напрямую в ASR
+                if len(self._vad_samples) > 0:
+                    self._asr.push_audio_chunk(self._vad_samples, sample_width=2, channels=1)
+                    self._vad_samples = np.array([], dtype=np.int16)
+                return
+            else:
+                # Тишина: накапливаем pre-roll (макс ~1 сек = 32 фрейма)
+                self._pre_roll_buffer.append(frame)
+                if len(self._pre_roll_buffer) > 32:
+                    self._pre_roll_buffer.pop(0)
+            self._vad_frame_count += 1
+
+    def get_new_text(self) -> dict:
         """Забирает накопленные текстовые чанки."""
-        chunks = []
+        words = []
+        texts = []
         while True:
             chunk = self._asr.get_transcript_chunk(timeout=0.0)
             if chunk is None:
                 break
-            chunks.append(chunk)
-        return "".join(chunks)
+            if isinstance(chunk, dict):
+                words.append({
+                    "start": chunk["start"],
+                    "end": chunk["end"],
+                    "word": chunk["text"]
+                })
+                texts.append(chunk["text"])
+            else:
+                texts.append(str(chunk))
+        # Endpointing: если ASR сигнализирует о конце речи, возвращаемся в VAD
+        if self._use_vad and self._mode == 'stream' and self._asr.endpoint_triggered:
+            logger.info(
+                f"StreamingRecognizer endpoint triggered, "
+                f"switching to vad (pending={len(self._asr._pending_tokens)})"
+            )
+            self._mode = 'vad'
+            self._asr.endpoint_triggered = False
+            self._pre_roll_buffer = []
+            self._vad_samples = np.array([], dtype=np.int16)
+        return {
+            "text": " ".join(texts),
+            "words": words
+        }
 
-    def flush(self) -> str:
+    def flush(self) -> dict:
         """Финализирует распознавание и возвращает оставшийся текст."""
+        logger.info(
+            f"StreamingRecognizer flush: mode={self._mode} "
+            f"pending={len(self._asr._pending_tokens)} "
+            f"fbank_ready={self._asr.fbank.num_frames_ready()} "
+            f"processed={self._asr.processed_frames}"
+        )
         self._asr.flush()
-        return self.get_new_text()
+        result = self.get_new_text()
+        logger.info(
+            f"StreamingRecognizer flush result: "
+            f"text_len={len(result.get('text', ''))} "
+            f"words={len(result.get('words', []))}"
+        )
+        return result
 
     @property
     def full_text(self) -> str:
         return self._asr.text
+
+
+class ClientSessionHandle:
+    def __init__(self, worker, input_queue, output_queue, recognizer):
+        self.worker = worker
+        self.input_queue = input_queue
+        self.output_queue = output_queue
+        self.recognizer = recognizer
+
+
+class StreamingClientWorker(threading.Thread):
+    def __init__(self, recognizer, input_queue, output_queue, client_id):
+        super().__init__(daemon=True)
+        self.recognizer = recognizer
+        self.input_queue = input_queue
+        self.output_queue = output_queue
+        self.client_id = client_id
+        self._stop_event = threading.Event()
+
+    def run(self):
+        logger.info(f"Worker {self.client_id} started")
+        while not self._stop_event.is_set():
+            try:
+                item = self.input_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+
+            msg_type = item.get("type")
+
+            if msg_type == "chunk":
+                payload = item.get("payload")
+                if payload is not None:
+                    self.recognizer.push_audiosegment(payload)
+                    result = self.recognizer.get_new_text()
+                    if result and result.get("text"):
+                        self.output_queue.put({"type": "partial", "data": result})
+
+            elif msg_type == "eof":
+                logger.info(
+                    f"Worker {self.client_id} received EOF, "
+                    f"input_queue_remaining={self.input_queue.qsize()}"
+                )
+                result = self.recognizer.flush()
+                logger.info(
+                    f"Worker {self.client_id} flush done: "
+                    f"text_len={len(result.get('text', ''))} "
+                    f"words={len(result.get('words', []))}"
+                )
+                self.output_queue.put({"type": "final", "data": result})
+                self.output_queue.put({"type": "done"})
+                logger.info(f"Worker {self.client_id} sent final+done, breaking")
+                break
+
+            elif msg_type == "disconnect":
+                self.recognizer.reset()
+                self.output_queue.put({"type": "done"})
+                break
+
+        logger.info(f"Worker {self.client_id} finished")
+
+    def stop(self):
+        self._stop_event.set()
 
 
 class StreamingRecognizerPool:
@@ -196,23 +356,45 @@ class StreamingRecognizerPool:
     def __init__(self, size: int = 5):
         self._pool = queue.Queue(maxsize=size)
         for _ in range(size):
-            self._pool.put(StreamingRecognizer())
+            self._pool.put(StreamingRecognizer(use_vad=True, use_beam=True))
 
-    def acquire(self) -> StreamingRecognizer:
+    def acquire(self) -> ClientSessionHandle:
         try:
-            return self._pool.get(block=False)
+            recognizer = self._pool.get(block=False)
         except queue.Empty:
             logger.warning("StreamingRecognizer pool exhausted, creating new instance")
-            return StreamingRecognizer()
+            recognizer = StreamingRecognizer(use_vad=True, use_beam=True)
 
-    def release(self, recognizer: Optional[StreamingRecognizer]):
-        if recognizer is None:
+        input_q = queue.Queue(maxsize=50)
+        output_q = queue.Queue(maxsize=100)
+        client_id = str(uuid.uuid4())
+        worker = StreamingClientWorker(recognizer, input_q, output_q, client_id)
+        worker.start()
+        return ClientSessionHandle(worker, input_q, output_q, recognizer)
+
+    def release(self, handle: Optional[ClientSessionHandle], send_disconnect: bool = True):
+        if handle is None:
             return
-        recognizer.reset()
+        if send_disconnect:
+            try:
+                handle.input_queue.put({"type": "disconnect"}, block=False)
+            except queue.Full:
+                pass
+        handle.worker.join(timeout=2.0)
+        if handle.worker.is_alive():
+            if not send_disconnect:
+                # При EOF worker должен был завершиться сам, но не успел — шлём disconnect
+                try:
+                    handle.input_queue.put({"type": "disconnect"}, block=False)
+                except queue.Full:
+                    pass
+            handle.worker.stop()
+            handle.worker.join(timeout=1.0)
+        handle.recognizer.reset()
         try:
-            self._pool.put(recognizer, block=False)
+            self._pool.put(handle.recognizer, block=False)
         except queue.Full:
             pass
 
 
-pool = StreamingRecognizerPool(size=5)
+pool = StreamingRecognizerPool(size=2)

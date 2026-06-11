@@ -24,7 +24,7 @@ async def send_messages(_socket, _channel_name = None, _data=None, _silence=True
     try:
         await ws.send_json(snd_mssg)
     except Exception as e:
-        logger.error(f"send_message - exception - {e}")
+        logger.error(f"send_message - exception - {e}, data - {data}")
     else:
         logger.debug(snd_mssg)
         logger.info(snd_mssg)

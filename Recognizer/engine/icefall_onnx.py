@@ -122,6 +122,7 @@ class IcefallOnnxASR:
         frame_shift_s: float = 0.01,
         hotwords_path: Optional[str] = None,
         hotword_bonus: float = 0.0,
+        blank_pruning_margin: float = 3.0,
     ) -> None:
         sess_opts = ort.SessionOptions()
         sess_opts.intra_op_num_threads = num_threads
@@ -243,6 +244,7 @@ class IcefallOnnxASR:
         self.beam_size = beam_size
         self.use_beam = use_beam
         self.length_norm = length_norm
+        self.blank_pruning_margin = blank_pruning_margin
         self.lm_scale = lm_scale
         self.frame_shift_s = frame_shift_s
         self.ngram_lm: Optional[NgramFstLM] = None
@@ -610,7 +612,9 @@ class IcefallOnnxASR:
         if not beams:
             return []
 
-        best = beams[0]
+        # Prefer non-empty hypothesis for text output, but keep empty in beams
+        non_empty_beams = [b for b in beams if b["tokens"]]
+        best = non_empty_beams[0] if non_empty_beams else beams[0]
         # Return only newly emitted tokens since last call
         new_tokens = best["tokens"][self._beam_prev_len :]
         new_texts = best["texts"][self._beam_prev_len :]

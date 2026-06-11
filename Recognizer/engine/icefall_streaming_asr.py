@@ -5,13 +5,12 @@ Streaming ASR wrapper for Icefall ONNX transducer models.
 
 import logging
 import queue
-import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-from Recognizer.temporary_folder.icefall_onnx import IcefallOnnxASR
+from Recognizer.engine.icefall_onnx import IcefallOnnxASR
 
 log = logging.getLogger(__name__)
 
@@ -82,6 +81,7 @@ class IcefallStreamingASR:
         frame_shift_s: float = 0.01,
         hotwords_path: Optional[str] = None,
         hotword_bonus: float = 0.0,
+        blank_pruning_margin: float = 3.0,
     ) -> None:
         self.model = IcefallOnnxASR(
             encoder_path=str(Path(model_dir) / encoder_name),
@@ -100,6 +100,7 @@ class IcefallStreamingASR:
             frame_shift_s=frame_shift_s,
             hotwords_path=hotwords_path,
             hotword_bonus=hotword_bonus,
+            blank_pruning_margin=blank_pruning_margin,
         )
         self.sample_rate = sample_rate
         self.fbank = FbankExtractor(sample_rate, num_mel_bins)
@@ -112,11 +113,13 @@ class IcefallStreamingASR:
         if self.model.expected_chunk_size is not None:
             log.info(f"Using chunk_size={self.chunk_size} from ONNX model")
         self.processed_frames = 0
-        self.output_queue: queue.Queue[str] = queue.Queue()
+        self.output_queue: queue.Queue = queue.Queue()
         self._text_so_far = ""
         self._token_details: List[Dict[str, Any]] = []
         self._pending_tokens: List[Dict[str, Any]] = []
-        self._last_token_real_time: float = 0.0
+        self._last_token_audio_time: float = 0.0
+        self.time_offset_s: float = 0.0
+        self.endpoint_triggered = False
 
     def reset(self) -> None:
         self.model.reset()
@@ -125,14 +128,18 @@ class IcefallStreamingASR:
         self._text_so_far = ""
         self._token_details: List[Dict[str, Any]] = []
         self._pending_tokens = []
-        self._last_token_real_time = 0.0
+        self._last_token_audio_time = 0.0
+        self.time_offset_s = 0.0
+        self.endpoint_triggered = False
         while not self.output_queue.empty():
             try:
                 self.output_queue.get_nowait()
             except queue.Empty:
                 break
 
-    def push_audio_chunk(self, audio_chunk, sample_width: int = 2, channels: int = 1) -> None:
+    def push_audio_chunk(self, audio_chunk, sample_width: int = 2, channels: int = 1, time_offset_s: float = 0.0) -> None:
+        self.time_offset_s = time_offset_s
+        self.endpoint_triggered = False
         samples = np.array(audio_chunk)
         if sample_width == 2:
             samples = samples.astype(np.float32) / 32768.0
@@ -150,6 +157,10 @@ class IcefallStreamingASR:
         self.fbank.accept_waveform(waveform)
         self._process_ready_frames()
 
+    def mark_stream_resume(self) -> None:
+        self._last_token_audio_time = self.processed_frames * self.model.frame_shift_s
+        self.endpoint_triggered = False
+
     def _process_ready_frames(self) -> None:
         ready = self.fbank.num_frames_ready()
         while ready - self.processed_frames >= self.chunk_size:
@@ -160,8 +171,11 @@ class IcefallStreamingASR:
             encoder_out = self.model._run_encoder(features)
             token_results = self.model.decode_encoder_out(encoder_out, frame_offset=start)
             if token_results:
+                if self.time_offset_s > 0:
+                    for r in token_results:
+                        r["timestamp"] += self.time_offset_s
                 self._pending_tokens.extend(token_results)
-                self._last_token_real_time = time.time()
+                self._last_token_audio_time = token_results[-1]["timestamp"]
                 self._commit_pending()
             self.processed_frames = end
             ready = self.fbank.num_frames_ready()
@@ -170,6 +184,11 @@ class IcefallStreamingASR:
         """Process any remaining frames after the audio stream ends."""
         self.fbank.input_finished()
         ready = self.fbank.num_frames_ready()
+        log.info(
+            f"IcefallStreamingASR flush: ready={ready} "
+            f"processed={self.processed_frames} "
+            f"pending={len(self._pending_tokens)}"
+        )
 
         # Обрабатываем оставшиеся полные чанки
         while ready - self.processed_frames >= self.chunk_size:
@@ -180,8 +199,11 @@ class IcefallStreamingASR:
             encoder_out = self.model._run_encoder(features)
             token_results = self.model.decode_encoder_out(encoder_out, frame_offset=start)
             if token_results:
+                if self.time_offset_s > 0:
+                    for r in token_results:
+                        r["timestamp"] += self.time_offset_s
                 self._pending_tokens.extend(token_results)
-                self._last_token_real_time = time.time()
+                self._last_token_audio_time = token_results[-1]["timestamp"]
                 self._commit_pending()
             self.processed_frames = end
             ready = self.fbank.num_frames_ready()
@@ -201,8 +223,11 @@ class IcefallStreamingASR:
             encoder_out = self.model._run_encoder(features)
             token_results = self.model.decode_encoder_out(encoder_out, frame_offset=start)
             if token_results:
+                if self.time_offset_s > 0:
+                    for r in token_results:
+                        r["timestamp"] += self.time_offset_s
                 self._pending_tokens.extend(token_results)
-                self._last_token_real_time = time.time()
+                self._last_token_audio_time = token_results[-1]["timestamp"]
             self._flush_pending()
             self.processed_frames = end
 
@@ -218,15 +243,52 @@ class IcefallStreamingASR:
                 last_word_start = i
                 break
 
+        log.debug(
+            "_commit_pending: pending=%d last_word_start=%d tokens=%s",
+            len(self._pending_tokens),
+            last_word_start,
+            [t["text"] for t in self._pending_tokens],
+        )
+
         if last_word_start > 0:
             completed = self._pending_tokens[:last_word_start]
             self._pending_tokens = self._pending_tokens[last_word_start:]
 
-            text = self.model.decode_token_ids([r["token"] for r in completed])
-            if text:
-                self.output_queue.put_nowait(text)
-                self._text_so_far += text
-                self._token_details.extend(completed)
+            # Разбиваем токены на отдельные слова по границам ▁
+            current_word_tokens: List[Dict[str, Any]] = []
+            for token in completed:
+                if token["text"].startswith("▁") and current_word_tokens:
+                    word_text = self.model.decode_token_ids([r["token"] for r in current_word_tokens])
+                    if word_text:
+                        self.output_queue.put_nowait({
+                            "text": word_text,
+                            "start": current_word_tokens[0]["timestamp"],
+                            "end": current_word_tokens[-1]["timestamp"],
+                        })
+                        self._text_so_far += word_text
+                    self._token_details.extend(current_word_tokens)
+                    current_word_tokens = [token]
+                else:
+                    current_word_tokens.append(token)
+
+            if current_word_tokens:
+                word_text = self.model.decode_token_ids([r["token"] for r in current_word_tokens])
+                if word_text:
+                    self.output_queue.put_nowait({
+                        "text": word_text,
+                        "start": current_word_tokens[0]["timestamp"],
+                        "end": current_word_tokens[-1]["timestamp"],
+                    })
+                    self._text_so_far += word_text
+                self._token_details.extend(current_word_tokens)
+
+            log.debug(
+                "_commit_pending: emitted %d tokens as %d words",
+                len(completed),
+                len([t for t in completed if t["text"].startswith("▁")]),
+            )
+        else:
+            log.debug("_commit_pending: no complete word yet")
 
     def _flush_pending(self) -> None:
         """Forcefully emit all pending tokens (used on timeout or flush)."""
@@ -234,15 +296,74 @@ class IcefallStreamingASR:
             return
         completed = self._pending_tokens
         self._pending_tokens = []
-        text = self.model.decode_token_ids([r["token"] for r in completed])
-        if text:
-            self.output_queue.put_nowait(text)
-            self._text_so_far += text
-            self._token_details.extend(completed)
+        log.info(f"_flush_pending: flushing {len(completed)} tokens")
 
-    def get_transcript_chunk(self, timeout: float = 0.1) -> Optional[str]:
-        if self._pending_tokens and (time.time() - self._last_token_real_time) > 0.5:
+        current_word_tokens: List[Dict[str, Any]] = []
+        for token in completed:
+            if token["text"].startswith("▁") and current_word_tokens:
+                word_text = self.model.decode_token_ids([r["token"] for r in current_word_tokens])
+                if word_text:
+                    self.output_queue.put_nowait({
+                        "text": word_text,
+                        "start": current_word_tokens[0]["timestamp"],
+                        "end": current_word_tokens[-1]["timestamp"],
+                    })
+                    self._text_so_far += word_text
+                self._token_details.extend(current_word_tokens)
+                current_word_tokens = [token]
+            else:
+                current_word_tokens.append(token)
+
+        if current_word_tokens:
+            word_text = self.model.decode_token_ids([r["token"] for r in current_word_tokens])
+            if word_text:
+                self.output_queue.put_nowait({
+                    "text": word_text,
+                    "start": current_word_tokens[0]["timestamp"],
+                    "end": current_word_tokens[-1]["timestamp"],
+                })
+                self._text_so_far += word_text
+            self._token_details.extend(current_word_tokens)
+
+        log.debug(
+            "_flush_pending: flushed %d tokens as %d words",
+            len(completed),
+            len([t for t in completed if t["text"].startswith("▁")]),
+        )
+
+    def _check_timeout(self) -> None:
+        gap_limit = 2.0
+        if not self._pending_tokens:
+            return
+        current_audio_time = self.processed_frames * self.model.frame_shift_s
+        gap = current_audio_time - self._last_token_audio_time
+        if gap > gap_limit:
+            log.info(
+                "_check_timeout: audio timeout (gap=%.3f > gap_limit=%.3f), forcing flush",
+                gap,gap_limit
+            )
             self._flush_pending()
+            self.endpoint_triggered = True
+
+    def get_transcript_chunk(self, timeout: float = 0.1) -> Optional[Dict[str, Any]]:
+        gap_limit = 2.0
+        current_audio_time = self.processed_frames * self.model.frame_shift_s
+        gap = current_audio_time - self._last_token_audio_time
+        log.debug(
+            "get_transcript_chunk: pending=%d audio_time=%.3f last_token_time=%.3f gap=%.3f",
+            len(self._pending_tokens),
+            current_audio_time,
+            self._last_token_audio_time,
+            gap,
+        )
+        if self._pending_tokens and gap > gap_limit:
+            log.info(
+                "get_transcript_chunk: audio timeout (gap=%.3f > gap_limit=%.3f), "
+                "pending=%d, forcing flush",
+                gap, gap_limit, len(self._pending_tokens),
+            )
+            self._flush_pending()
+            self.endpoint_triggered = True
         try:
             return self.output_queue.get(timeout=timeout)
         except queue.Empty:

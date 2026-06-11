@@ -40,7 +40,7 @@ USE_BATCH = True if int(os.getenv('USE_BATCH', 1)) == 1 else False
 ASR_BATCH_SIZE = int(os.getenv('ASR_BATCH_SIZE', 8))   # Размер батча для распознавания аудио.
 
 # Vad_settings
-VAD_SENSITIVITY = int(os.getenv('VAD_SENSE', 3))  # 1 to 5 Higher - more words.
+VAD_SENSITIVITY = int(os.getenv('VAD_SENSE', 5))  # 1 to 5 Higher - more words.
 VAD_WITH_GPU = True if int(os.getenv('VAD_WITH_GPU', 0)) == 1 else False
 
 # Sentensize_settings

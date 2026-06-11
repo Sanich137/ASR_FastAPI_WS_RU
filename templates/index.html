@@ -58,12 +58,22 @@
         <button id="sendFileButton" onclick="sendFile()" disabled>Отправить файл</button>
         <div class="form-group checkbox-group">
             <div class="checkbox">
+                <input type="checkbox" id="ws_streaming" name="ws_streaming">
+                <span>Стриминг</span>
+            </div>
+            <div class="checkbox">
                 <input type="checkbox" id="ws_do_dialogue" name="ws_do_dialogue">
                 <span>Разделение на диалоги</span>
             </div>
             <div class="checkbox">
                 <input type="checkbox" id="ws_do_punctuation" name="ws_do_punctuation">
                 <span>Расстановка пунктуации</span>
+            </div>
+            <div class="form-group" style="margin-top: 10px;">
+                <label for="ws_chunk_size_sec">Размер чанка (сек):</label>
+                <input type="number" id="ws_chunk_size_sec" value="0.5" step="0.1" min="0.1" style="width: 80px;">
+                <label for="ws_delay_ms" style="margin-left: 15px;">Пауза (мс):</label>
+                <input type="number" id="ws_delay_ms" value="100" step="10" min="0" style="width: 80px;">
             </div>
         </div>
         <div id="resultFile" class="result"></div>
@@ -224,6 +234,9 @@
     });
 
     function addServerResponse(message) {
+        if (message.silence === true && (!message.data || !message.data.text)) {
+            return;
+        }
         const serverResponsesElem = document.getElementById('serverResponses');
         const responseDiv = document.createElement('div');
         responseDiv.style.marginBottom = '10px';
@@ -252,11 +265,13 @@
         return { sampleRate, numChannels, bitsPerSample };
     }
 
-    async function sendChannel(arrayBuffer, channel, numChannels, chunkSize, sampleRate) {
+    async function sendChannel(arrayBuffer, channel, numChannels, chunkSizeBytes, delayMs, sampleRate, bitsPerSample) {
         return new Promise((resolve, reject) => {
             const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
+            const wsPath = document.getElementById('ws_streaming').checked ? '/ws_streaming' : '/ws';
+            const wsUrl = `${wsProtocol}//${window.location.host}${wsPath}`;
             const socket = new WebSocket(wsUrl);
+            let isResolved = false;
 
             const doDialogue = document.getElementById('ws_do_dialogue').checked;
             const doPunctuation = document.getElementById('ws_do_punctuation').checked;
@@ -265,56 +280,67 @@
                 socket.send(JSON.stringify({
                     config: {
                         sample_rate: sampleRate,
-                        wait_null_answers: true,
+                        wait_null_answers: false,
                         do_dialogue: doDialogue,
                         do_punctuation: doPunctuation
                     }
                 }));
 
                 const dataView = new Uint8Array(arrayBuffer);
-                const bytesPerSample = 2;
+                const bytesPerSample = bitsPerSample / 8;
                 let offset = 44 + channel * bytesPerSample;
 
                 while (offset < dataView.length) {
-                    const endOffset = Math.min(offset + chunkSize * numChannels, dataView.length);
+                    const endOffset = Math.min(offset + chunkSizeBytes * numChannels, dataView.length);
                     const chunk = new Uint8Array((endOffset - offset) / numChannels);
 
                     for (let i = 0; i < chunk.length; i += bytesPerSample) {
                         const sampleOffset = offset + i * numChannels;
-                        chunk[i] = dataView[sampleOffset];
-                        chunk[i + 1] = dataView[sampleOffset + 1];
+                        for (let b = 0; b < bytesPerSample; b++) {
+                            chunk[i + b] = dataView[sampleOffset + b];
+                        }
                     }
 
                     socket.send(chunk);
-                    offset += chunkSize * numChannels;
-                    await new Promise((resolve) => setTimeout(resolve, 100));
+                    offset += chunkSizeBytes * numChannels;
+                    await new Promise((resolve) => setTimeout(resolve, delayMs));
                 }
 
+                console.log(`EOF sent for channel ${channel}`);
                 socket.send(JSON.stringify({ eof: 1 }));
             };
 
             socket.onmessage = function(event) {
                 const data = JSON.parse(event.data);
                 addServerResponse(data);
-                if (data.last_message) {
+                if (data.last_message && !isResolved) {
+                    isResolved = true;
+                    console.log(`last_message received for channel ${channel}, closing socket`);
                     socket.close();
                     resolve();
                 }
             };
 
             socket.onerror = function(error) {
-                reject('Ошибка WebSocket: ' + error.message);
+                if (!isResolved) {
+                    isResolved = true;
+                    reject('Ошибка WebSocket: ' + error.message);
+                }
             };
 
             socket.onclose = function() {
                 console.log(`Сокет для канала ${channel} закрыт`);
+                if (!isResolved) {
+                    isResolved = true;
+                    resolve();
+                }
             };
         });
     }
 
-    async function sendAllChannels(arrayBuffer, numChannels, chunkSize, sampleRate) {
+    async function sendAllChannels(arrayBuffer, numChannels, chunkSizeBytes, delayMs, sampleRate, bitsPerSample) {
         for (let channel = 0; channel < numChannels; channel++) {
-            await sendChannel(arrayBuffer, channel, numChannels, chunkSize, sampleRate);
+            await sendChannel(arrayBuffer, channel, numChannels, chunkSizeBytes, delayMs, sampleRate, bitsPerSample);
             console.log("конец канала");
         }
     }
@@ -328,13 +354,17 @@
             return;
         }
 
+        const chunkSizeSec = parseFloat(document.getElementById('ws_chunk_size_sec').value) || 0.5;
+        const delayMs = parseInt(document.getElementById('ws_delay_ms').value) || 100;
+
         const reader = new FileReader();
         reader.onload = async function(e) {
             const arrayBuffer = e.target.result;
             try {
-                const { sampleRate, numChannels } = readWavHeader(arrayBuffer);
-                const chunkSize = 65536;
-                await sendAllChannels(arrayBuffer, numChannels, chunkSize, sampleRate);
+                const { sampleRate, numChannels, bitsPerSample } = readWavHeader(arrayBuffer);
+                const bytesPerSample = bitsPerSample / 8;
+                const chunkSizeBytes = Math.floor(chunkSizeSec * sampleRate * bytesPerSample);
+                await sendAllChannels(arrayBuffer, numChannels, chunkSizeBytes, delayMs, sampleRate, bitsPerSample);
                 console.log("Все каналы отправлены");
             } catch (e) {
                 errorElem.textContent = 'Ошибка: ' + e.message;

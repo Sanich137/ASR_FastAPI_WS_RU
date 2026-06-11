@@ -89,6 +89,27 @@ class SileroVAD:
 
         return prob, self.state
 
+    def is_speech_sync(self, audio_frame: np.ndarray, sample_rate) -> tuple[float, np.ndarray]:
+        """Синхронная обёртка над ONNX-инференсом VAD."""
+        if len(audio_frame) != self.frame_size:
+            audio_frame = np.pad(audio_frame, (0, self.frame_size - len(audio_frame)), mode='constant')[
+                          :self.frame_size]
+
+        inputs = {
+            'input': audio_frame.reshape(1, -1).astype(np.float32),
+            'state': self.state,
+            'sr': np.array(object=sample_rate, dtype=np.int64)
+        }
+
+        outputs = self.session.run(['output', 'stateN'], inputs)
+        self.state = outputs[1]
+        prob = float(outputs[0][0, 0])
+
+        return prob, self.state
+
+    def reset_state_sync(self):
+        self.state = np.zeros((2, 1, 128), dtype=np.float32)
+
     async def get_speech_segments(self, audio_frames: np.ndarray) -> list[tuple]:
         if len(audio_frames.shape) == 2:
             audio_frames = audio_frames.flatten()
