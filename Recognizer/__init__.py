@@ -349,8 +349,6 @@ class StreamingClientWorker(threading.Thread):
 class StreamingRecognizerPool:
     """
     Пул переиспользуемых экземпляров StreamingRecognizer.
-    Позволяет избежать дорогостоящей загрузки ONNX-модели
-    при каждом новом WebSocket-соединении.
     """
 
     def __init__(self, size: int = 5):
